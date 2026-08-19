@@ -40,6 +40,13 @@ export default defineConfig({
         // Never cache Firestore/Auth/OpenAI traffic - only the app shell.
         navigateFallbackDenylist: [/^\/api/],
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+        // Take over immediately instead of waiting for every tab to close.
+        // Without these, a deployed fix can sit behind a service worker that
+        // keeps serving the previous bundle - which is exactly how a config
+        // change can look like "the fix didn't work".
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
       },
     }),
   ],

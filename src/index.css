@@ -96,6 +96,21 @@ body {
   margin: 0 0 8px;
 }
 
+.diag {
+  max-width: 42ch;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .empty, .hint {
   color: var(--text-dim);
   font-size: 14px;

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useAuth } from './AuthProvider'
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { access, user, signIn, signOutNow } = useAuth()
+  const { access, detail, user, signIn, signOutNow } = useAuth()
 
   if (access === 'loading') {
     return (
@@ -16,9 +16,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <div className="centered splash">
         <h1 className="wordmark">remimbers</h1>
-        <p className="tagline">
-          Catch the thought. Rehearse it later, out loud.
-        </p>
+        <p className="tagline">Catch the thought. Rehearse it later, out loud.</p>
         <button className="btn btn-primary" onClick={signIn}>
           Sign in with Google
         </button>
@@ -26,13 +24,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
     )
   }
 
-  if (access === 'not-allowed') {
+  if (access === 'not-allowed' || access === 'blocked') {
     return (
       <div className="centered splash">
         <h1 className="wordmark">remimbers</h1>
         <p className="tagline">
-          {user?.email} isn&rsquo;t on the invite list yet.
+          {access === 'blocked'
+            ? 'Something is misconfigured.'
+            : `${user?.email} isn't on the invite list yet.`}
         </p>
+        {detail && <pre className="diag">{detail}</pre>}
         <button className="btn" onClick={signOutNow}>
           Sign out
         </button>
