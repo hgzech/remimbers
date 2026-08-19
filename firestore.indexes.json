@@ -1,19 +1,18 @@
 {
+  "comment": [
+    "Only COMPOSITE indexes belong here.",
+    "Firestore creates single-field indexes automatically, in both directions,",
+    "and rejects any attempt to declare one explicitly ('this index is not",
+    "necessary'). So the notes query (orderBy createdAt desc) needs no entry."
+  ],
   "indexes": [
     {
-      "comment": "The daily queue: due, unsuspended cards in due order.",
       "collectionGroup": "cards",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "suspended", "order": "ASCENDING" },
         { "fieldPath": "due", "order": "ASCENDING" }
       ]
-    },
-    {
-      "comment": "Library view: most recent notes first.",
-      "collectionGroup": "notes",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "createdAt", "order": "DESCENDING" }]
     }
   ],
   "fieldOverrides": []
