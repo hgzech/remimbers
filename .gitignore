@@ -1,0 +1,17 @@
+node_modules
+dist
+lib
+*.local
+
+# Env files are ignored by default, with two deliberate exceptions:
+# .env.example (template) and .env.production (public Firebase config -
+# see the comment inside it for why committing it is safe).
+.env
+.env.*
+!.env.example
+!.env.production
+
+.firebase
+firebase-debug.log
+.DS_Store
+dev-dist

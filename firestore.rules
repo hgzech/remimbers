@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAllowed() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/allowlist/$(request.auth.token.email.lower()));
+    }
+
+    // The invite list. Readable by any signed-in user so the UI can explain
+    // itself; writable only from the Firebase console (no allow write rule).
+    match /allowlist/{email} {
+      allow read: if request.auth != null;
+    }
+
+    // Everything a user owns lives under their uid, so ownership is one check.
+    // Note this trusts the client to write honest review data - accepted
+    // deliberately for a friends-only app (see DESIGN.md section 8).
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth.uid == uid && isAllowed();
+    }
+  }
+}

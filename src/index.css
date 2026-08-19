@@ -1,0 +1,219 @@
+:root {
+  --bg: #12121a;
+  --surface: #1c1c27;
+  --surface-2: #24242f;
+  --border: #33333f;
+  --text: #eceaf3;
+  --text-dim: #9a97a8;
+  --accent: #8b7cf6;
+  --accent-ink: #ffffff;
+  --radius: 14px;
+
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", Inter,
+    "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  /* Stop iOS rubber-band scrolling from revealing white behind the app. */
+  overscroll-behavior-y: none;
+}
+
+/* ---------- shell ---------- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+  /* dvh, not vh: vh is wrong on iOS while the URL bar animates. */
+  height: 100dvh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(env(safe-area-inset-top), 12px) 16px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.app-main {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  /* Clear the iPhone home indicator. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.app-nav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 0 8px;
+  /* 44px is Apple's minimum comfortable tap target. */
+  min-height: 44px;
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.app-nav a.active { color: var(--accent); }
+.app-nav svg { width: 22px; height: 22px; }
+
+/* ---------- type ---------- */
+
+.wordmark {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.wordmark.small { font-size: 15px; color: var(--text-dim); }
+
+.tagline {
+  color: var(--text-dim);
+  max-width: 30ch;
+  text-align: center;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+
+.empty, .hint {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ---------- bits ---------- */
+
+.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  padding: 24px;
+}
+
+.splash .wordmark { font-size: 30px; }
+
+.btn {
+  font: inherit;
+  font-weight: 500;
+  padding: 12px 22px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font: inherit; font-size: 13px;
+  cursor: pointer;
+}
+
+.spinner {
+  width: 22px; height: 22px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- capture ---------- */
+
+.capture {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 12px;
+}
+
+.capture-input {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  /* 16px minimum, or iOS Safari zooms the viewport on focus. */
+  font-size: 18px;
+  line-height: 1.55;
+}
+.capture-input::placeholder { color: var(--text-dim); }
+
+.capture-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.flash {
+  font-size: 14px;
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.flash.on { opacity: 1; }
+
+/* ---------- library ---------- */
+
+.note-list { list-style: none; margin: 0; padding: 12px; display: grid; gap: 10px; }
+
+.note {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+.note-text { margin: 0 0 8px; line-height: 1.5; }
+.note-meta {
+  display: flex; gap: 8px; align-items: center;
+  font-size: 12px; color: var(--text-dim);
+}
+.badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
