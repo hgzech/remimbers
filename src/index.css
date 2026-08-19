@@ -232,3 +232,5 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+.list-note { padding: 14px 16px 0; margin: 0; }

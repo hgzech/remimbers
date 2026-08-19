@@ -29,7 +29,7 @@ export function Capture() {
         className="capture-input"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="What do you want to remember?"
+        placeholder="Say what you just learned, in your own words. Cards get written for you."
         autoFocus
         // On iOS, tapping this and hitting the keyboard's mic key gives you
         // system dictation for free - the fallback until Phase 3 lands.
@@ -46,8 +46,12 @@ export function Capture() {
       </div>
 
       <p className="hint">
-        Voice capture arrives in Phase&nbsp;3. For now, tap the mic on your
-        keyboard &mdash; or press&nbsp;&#8984;&#8629;.
+        One field on purpose &mdash; you&rsquo;re dumping a thought, not
+        authoring a flashcard. Splitting it into question and answer is the
+        LLM&rsquo;s job (Phase&nbsp;1).
+        <br />
+        Voice capture arrives in Phase&nbsp;3; for now tap the mic on your
+        keyboard, or press&nbsp;&#8984;&#8629;.
       </p>
     </div>
   )

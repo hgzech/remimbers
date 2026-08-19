@@ -29,21 +29,26 @@ export function Library() {
   }
 
   return (
-    <ul className="note-list">
-      {notes.map((n) => (
-        <li key={n.id} className="note">
-          <p className="note-text">{n.rawText}</p>
-          <div className="note-meta">
-            <span>{n.createdAt?.toDate().toLocaleDateString() ?? 'just now'}</span>
-            {n.status !== 'done' && <span className="badge">{n.status}</span>}
-            {n.cardIds.length > 0 && (
+    <>
+      <p className="hint list-note">
+        Captured notes. Card generation and editing arrive in Phase&nbsp;1.
+      </p>
+      <ul className="note-list">
+        {notes.map((n) => (
+          <li key={n.id} className="note">
+            <p className="note-text">{n.rawText}</p>
+            <div className="note-meta">
+              <span>{n.createdAt?.toDate().toLocaleDateString() ?? 'just now'}</span>
+              {n.status !== 'done' && <span className="badge">{n.status}</span>}
               <span className="badge">
-                {n.cardIds.length} card{n.cardIds.length > 1 ? 's' : ''}
+                {n.cardIds.length > 0
+                  ? `${n.cardIds.length} card${n.cardIds.length > 1 ? 's' : ''}`
+                  : 'no cards yet'}
               </span>
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
