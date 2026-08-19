@@ -1,6 +1,12 @@
 node_modules
 dist
-lib
+dev-dist
+
+# Compiled Cloud Functions output. Anchored with a leading slash on purpose:
+# a bare "lib" pattern matches EVERY directory named lib at any depth, which
+# silently swallowed src/lib and broke the CI build.
+/functions/lib
+
 *.local
 
 # Env files are ignored by default, with two deliberate exceptions:
@@ -14,4 +20,3 @@ lib
 .firebase
 firebase-debug.log
 .DS_Store
-dev-dist
