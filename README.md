@@ -8,7 +8,8 @@ repetition algorithm says you're about to forget it.
 
 See [`DESIGN.md`](./DESIGN.md) for the architecture and the reasoning behind it.
 
-**Status: Phase 0** — skeleton, auth, text capture, deploy pipeline.
+**Status: Phase 1** — notes are turned into flashcards by a Cloud Function; the
+library shows them and lets you fix or delete them.
 
 ---
 
@@ -87,8 +88,35 @@ error that doesn't name the domain it wanted.
 Run this yourself; don't paste the key into a chat, a file, or the repo:
 
 ```bash
-firebase functions:secrets:set OPENAI_API_KEY
+firebase functions:secrets:set OPENAI_API_KEY --project remimbers
 ```
+
+### 7. Deploy the functions
+
+Not done by CI — the Pages workflow only builds the static site, and giving
+Actions deploy rights to Functions would mean a service-account key in repo
+secrets for something you deploy a handful of times.
+
+```bash
+cd functions && npm ci && cd ..
+firebase deploy --only functions --project remimbers
+```
+
+`npm ci` installs but does not compile, and the CLI reads `functions/lib/index.js`
+— the compiled output, which is gitignored. The `predeploy` hook in
+`firebase.json` runs `tsc` for you; without it the deploy fails with
+`functions/lib/index.js does not exist`, which reads like a missing file rather
+than a missing build step.
+
+The hook invokes `node_modules/.bin/tsc` directly rather than `npm run build`.
+The Firebase CLI spawns predeploy commands through a non-interactive shell,
+which does not source `nvm` — so `npm` there can be a much older version than
+the one in your terminal, and old npm crashes with
+`Cannot read properties of undefined (reading 'stdin')` when spawned without a
+TTY. Calling the compiler directly removes npm from the path entirely.
+
+Always pass `--project`: `firebase use`'s per-directory setting lives in a
+global configstore and silently overrides `.firebaserc`.
 
 ---
 
@@ -119,6 +147,24 @@ allowlist, full stop.
 `AuthProvider` reads it only to decide whether to show "you're not invited"
 instead of a wall of permission errors. Faking the client check gains nothing.
 
+**Why the generation function is in `europe-west3` when everything else is in
+`europe-west1`.** Firestore triggers are Eventarc triggers, and Eventarc
+requires the trigger to sit where the database sits. Deploying it alongside the
+HTTP functions fails with `unsupported Cloud Firestore region`, an error that
+never mentions the database as the cause.
+
+**Why there is a `dryRunCards` endpoint.** Card quality is the riskiest
+assumption in the app, and judging a prompt means running a corpus of notes
+through it and reading the output. Doing that through the real trigger would
+cost a deploy per wording and fill Firestore with junk. `dryRunCards` writes
+nothing and takes a `promptOverride`, so a whole sweep costs one deploy. See
+`evals/`.
+
+**Why a failed note offers "Try again" instead of retrying in place.**
+Generation fires on document *creation*, so updating a failed note re-runs
+nothing. The retry re-captures the same `rawText` as a new note and deletes the
+old one — safe precisely because a failed note never produced cards.
+
 **Bundle size.** The Firebase SDK dominates (~250 kB gzipped). Acceptable for
 an installed PWA that caches; worth code-splitting if first load starts to
 feel slow.
@@ -129,12 +175,16 @@ feel slow.
 
 ```
 src/
-  lib/        firebase init, env, data model, note helpers
+  lib/        firebase init, env, data model, note + card helpers
   auth/       AuthProvider (session + allowlist) and AuthGate
   routes/     Capture, Review, Library
   components/ Layout with bottom nav
 functions/
-  src/        Cloud Functions; the only secret-holding component
+  src/
+    prompt.ts    the note → cards prompt. The Phase 1 deliverable
+    generate.ts  one POST to the Responses API, plus sanitising
+    index.ts     the trigger, the dry-run endpoint, CORS and auth
+evals/        prompt eval corpus and console runner — see evals/README.md
 ```
 
 ## Roadmap
@@ -142,7 +192,7 @@ functions/
 | Phase | What | Status |
 |---|---|---|
 | 0 | Skeleton, auth, text capture, deploy | ✅ |
-| 1 | Note → cards via LLM, auto-accepted | |
+| 1 | Note → cards via LLM, auto-accepted | ✅ |
 | 2 | FSRS + text review (Again/Hard/Good/Easy) | |
 | 3 | Voice capture, PWA install, offline queue | |
 | 4 | Realtime voice rehearsal + conversational grading | |

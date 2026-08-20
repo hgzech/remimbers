@@ -228,6 +228,107 @@ body {
   border-radius: 999px;
   padding: 2px 8px;
 }
+.badge-quiet { color: var(--text-dim); font-size: 11px; }
+.badge-live { color: var(--accent); border-color: var(--accent); }
+.badge-bad { color: #f2777a; border-color: #f2777a; }
+
+/* ---------- cards under a note ---------- */
+
+.note-delete { margin-left: auto; }
+
+.card-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 12px;
+}
+
+.card-front { margin: 0 0 4px; font-size: 15px; line-height: 1.45; }
+.card-back {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--accent);
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+.card-spacer { flex: 1; }
+
+.card-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.card-input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  /* 16px minimum, or iOS Safari zooms the viewport on focus. */
+  font-size: 16px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  margin-bottom: 9px;
+}
+.card-input:focus { outline: 1px solid var(--accent); }
+
+/* Text buttons, but still 44px of tappable height on a phone. */
+.linkbtn {
+  font: inherit;
+  font-size: 13px;
+  background: none;
+  border: none;
+  padding: 6px 2px;
+  min-height: 32px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.linkbtn:hover { color: var(--text); }
+.linkbtn.danger:hover { color: #f2777a; }
+
+.btn-small { padding: 7px 14px; min-height: 32px; font-size: 13px; }
+
+.card-fail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.card-fail-msg {
+  margin: 0;
+  flex: 1;
+  min-width: 12ch;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  word-break: break-word;
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

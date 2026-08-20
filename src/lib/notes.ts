@@ -1,6 +1,8 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
+  doc,
   limit,
   onSnapshot,
   orderBy,
@@ -26,11 +28,31 @@ export function addNote(uid: string, rawText: string, source: Note['source'] = '
   return addDoc(notesCollection(uid), {
     rawText: rawText.trim(),
     source,
-    // Phase 1 flips this to 'generating' and a Cloud Function moves it to 'done'.
-    status: 'done',
+    // The onNoteCreated function moves this to 'done' (with cardIds) or to
+    // 'failed' (with an error). Writing 'generating' here rather than letting
+    // the function set it means the library shows the right state the instant
+    // the note appears - including offline, where the trigger has not run and
+    // will not until the write syncs.
+    status: 'generating',
     cardIds: [],
     createdAt: serverTimestamp(),
   })
+}
+
+/**
+ * Re-capture a failed note's text as a new note.
+ *
+ * Generation fires on document *creation*, so a failed note cannot be retried
+ * in place - updating it re-runs nothing. Creating a fresh note from the same
+ * rawText is the honest retry, and it is safe precisely because a failed note
+ * never produced any cards to orphan.
+ */
+export async function retryNote(
+  uid: string,
+  note: Pick<Note, 'id' | 'rawText' | 'source'>,
+) {
+  await addNote(uid, note.rawText, note.source)
+  await deleteDoc(doc(notesCollection(uid), note.id))
 }
 
 export function subscribeToRecentNotes(

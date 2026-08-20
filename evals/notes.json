@@ -1,0 +1,118 @@
+{
+  "_readme": [
+    "Eval corpus for the note->cards prompt (functions/src/prompt.ts).",
+    "",
+    "Two of these are real captures from Firestore; the rest are written to",
+    "provoke the failure modes DESIGN.md section 4.1 names, plus the ones",
+    "dictation will introduce in Phase 3. `watch` is what to look for when",
+    "reading the output - it is a rubric, not an expected answer, because",
+    "there is more than one good card for most notes.",
+    "",
+    "Run with: evals/run.js pasted into the browser console of the signed-in",
+    "app. See evals/README.md."
+  ],
+  "cases": [
+    {
+      "id": "real-greek",
+      "real": true,
+      "rawText": "The only consonants that Greek words can end with are n and s.",
+      "watch": "One card. The question must not give away that there are exactly two, and must not be answerable by guessing a single letter."
+    },
+    {
+      "id": "real-pythagoras",
+      "real": true,
+      "rawText": "Pythagoras forbid his disciples to eat beans because he thought they contain transmigrating souls.",
+      "watch": "Two cards - the prohibition and the reason - per DESIGN.md. Neither may say 'he' without naming Pythagoras. 'Transmigrating' must survive verbatim."
+    },
+    {
+      "id": "multi-fact",
+      "rawText": "Okay so the Danish word hygge doesn't translate directly, it's about cosiness and a kind of contentment, and it actually comes from a Norwegian word meaning wellbeing.",
+      "watch": "Two or three cards, not one blob. Watch for the etymology and the meaning being fused into a single unanswerable question."
+    },
+    {
+      "id": "pronoun-trap",
+      "rawText": "He was the one who figured out the orbits were ellipses, not circles, and that was after Tycho died.",
+      "watch": "The note never names Kepler. A card that says 'Kepler' has invented a fact; a card that says 'he' is unanswerable. Both are failures."
+    },
+    {
+      "id": "thin-fragment",
+      "rawText": "Rayleigh scattering.",
+      "watch": "Must still produce a card (no zero-card notes) and must not invent a definition of Rayleigh scattering the note never gave."
+    },
+    {
+      "id": "negation",
+      "rawText": "Dopamine is not the pleasure chemical, it's about wanting rather than liking.",
+      "watch": "The wanting/liking distinction is the fact. A card asking 'Is dopamine the pleasure chemical?' is a yes/no failure."
+    },
+    {
+      "id": "technical-vocab",
+      "rawText": "In FSRS, stability is the number of days until retrievability drops to ninety percent.",
+      "watch": "'Stability' and 'retrievability' must not be paraphrased into 'strength' or 'recall'. Ninety percent should become 90%."
+    },
+    {
+      "id": "garbled-transcript",
+      "rawText": "The Antikythera mechanism was found in a ship wreck off the coast of anti kithira in nineteen oh one and it's a it's a analog computer for predicting eclipses.",
+      "watch": "Stutter removed, 1901 as digits, 'anti kithira' recovered to Antikythera. Probably two or three cards. Should not card-ify the transcription noise."
+    },
+    {
+      "id": "greek-mix",
+      "rawText": "Το φιλότιμο doesn't have an English equivalent, it's closest to a sense of honour and duty to do the right thing.",
+      "watch": "The Greek term must be preserved in Greek script. Card written in English, the note's dominant language."
+    },
+    {
+      "id": "list-of-four",
+      "rawText": "The four humours were blood, phlegm, yellow bile and black bile.",
+      "watch": "Over-splitting risk: four cards for one list is wrong. One card, or a cloze. The answer is long-ish but still sayable."
+    },
+    {
+      "id": "opinion",
+      "rawText": "I think the reason standups fail is that they optimise for the manager's information needs, not the team's.",
+      "watch": "Not a fact, but still a card. Should ask for the claim, and should not present the opinion as established truth."
+    },
+    {
+      "id": "task-not-fact",
+      "rawText": "Remember to ask Maria about the Crete trip dates.",
+      "watch": "The hardest case for a flashcard app. Must produce a card rather than failing, and it should read as a reminder, not a trivia question."
+    },
+    {
+      "id": "numeric",
+      "rawText": "Sound travels about three hundred and forty three metres per second in air at twenty degrees.",
+      "watch": "Digits, units kept, and the 20°C condition must not be dropped - without it the answer is wrong."
+    },
+    {
+      "id": "causal-chain",
+      "rawText": "Tomatoes were considered poisonous in Europe for about two hundred years because rich people ate off pewter plates and the acid leached the lead out.",
+      "watch": "Three linked facts. Watch for a single card whose answer is a paragraph, and for a yes/no framing of 'were tomatoes considered poisonous'."
+    },
+    {
+      "id": "vague-reference",
+      "rawText": "That thing about the Baader-Meinhof phenomenon is just frequency illusion plus recency bias.",
+      "watch": "'That thing' must not survive into the question. Baader-Meinhof is named, so the question can stand alone."
+    },
+    {
+      "id": "near-duplicate",
+      "rawText": "Greek words can only end in n or s.",
+      "watch": "Near-duplicate of real-greek. Dedup is out of scope for Phase 1; this is here to check the prompt is stable, not to test dedup."
+    },
+    {
+      "id": "long-ramble",
+      "rawText": "So the thing about the Mercator projection that I never realised is that it's conformal, meaning it preserves angles locally, which is exactly why it was useful for navigation, you could draw a straight line and sail a constant compass bearing, and the area distortion that everyone complains about is basically the price you pay for that.",
+      "watch": "Long but coherent. Two or three cards. Watch for a card asking 'what is the price you pay' - unanswerable out of context."
+    },
+    {
+      "id": "definition",
+      "rawText": "Apophenia is the tendency to perceive meaningful connections between unrelated things.",
+      "watch": "A clean definition - a reasonable place for cloze, or a plain qa. Either is fine; a four-card explosion is not."
+    },
+    {
+      "id": "formula",
+      "rawText": "Bayes' theorem: posterior equals likelihood times prior over evidence.",
+      "watch": "Exact wording matters, so cloze is defensible. Must not be rewritten into notation the note never used."
+    },
+    {
+      "id": "self-correcting",
+      "rawText": "Someone said the plural of anecdote is not data, but apparently the original quote was the opposite, the plural of anecdote IS data.",
+      "watch": "The fact is the reversal. A card that asserts only one half loses the point. 'Someone' must not become a fabricated name."
+    }
+  ]
+}
