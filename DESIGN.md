@@ -1,6 +1,6 @@
 # Remimbers — Design Notes
 
-*v0.2 — 19 Aug 2026. Thinking document, not a spec.*
+*v0.3 — 20 Aug 2026. Thinking document, not a spec.*
 
 ## Decisions log
 
@@ -13,6 +13,7 @@
 | Platform | **iPhone-first PWA**, Android free | Manual home-screen install; user gesture required for mic (§5.2) |
 | Cards | **Auto-accepted**, fixable at review time | No approval inbox |
 | Zero-card notes | **Not supported** — every note yields ≥1 card | Simpler model |
+| Thin notes | **Never padded from model knowledge**; repaired conversationally at review | Capture stays non-blocking (§4.1a) |
 | Grading | LLM judges correct/incorrect; **user picks the difficulty** | Sidesteps LLM leniency (§4.3) |
 | Text review | **Included** | It *is* Phase 2 — free by construction (§4.4) |
 | Fraud | Accepted | No server-side grade validation |
@@ -162,6 +163,27 @@ The prompt does the real work here. Non-negotiables:
 
 **Decided: cards are auto-accepted.** No approval inbox — those get abandoned by week three. Instead, every card shows its source note during review, so a bad card gets fixed or deleted in one tap *at the moment it annoys you*. Fix-on-encounter beats a review queue for a personal tool, and it means the cost of a mediocre generated card is one mildly irritating review rather than a chore you have to do up front.
 
+### 4.1a Thin notes: clarify at review, never at capture
+
+*Added 20 Aug 2026, from the first prompt eval sweep.*
+
+Some notes are too thin to card honestly — dictation cut off by a dropped mic, a term captured with no context, a sentence that trails off. There are only two ways to handle one, and they pull in opposite directions:
+
+- **Pad it from the model's own knowledge.** Produces a good-looking card containing something you never actually heard. This is the worst failure the app can have, and not because the added fact is likely to be wrong — it usually isn't. It's that a fabricated card is *indistinguishable from a real one*. You cannot tell, months later, which parts of your deck came from the world and which came from the model, and the moment that's true the deck stops being a record of what you learned. It also quietly voids §3's promise that the deck can be regenerated from notes, since the notes no longer contain what the cards test.
+- **Card only what survived.** Honest, and visibly thin.
+
+**The second, always.** Observed rate: `gpt-5.6-luna` fabricated in exactly one of twenty eval cases — the single case where the note gave it nothing to work with. Everywhere else it stayed inside the note, including a case where supplying a correct missing name would have been trivial. So the failure mode is real but narrow: it appears precisely when the note is starved, which is exactly when a thin card is the right answer anyway.
+
+**The obvious objection, and the answer.** A conversational capture would just say "I didn't catch that." Fire-and-forget voice notes can't — that's a genuine cost of the capture model, not an oversight. But §1 makes non-blocking capture the property everything else is arranged around: speak, "captured ✓", app closed, five seconds. A clarification round trip at capture would destroy it to fix a minority of notes.
+
+The resolution is that the clarification doesn't have to happen *at capture*. It happens at **review**, where Phase 4 already has a conversational agent:
+
+> "You noted 'Rayleigh scattering' but didn't say what about it — want to fill that in?"
+
+Which is better than clarifying at capture, not merely cheaper. At capture you're mid-podcast with three seconds; at review you're already thinking about that fact and have nothing else to do. It also gives the rehearsal agent a second job beyond quizzing — repairing the deck as you go — which is the sort of thing that justifies a conversation over four buttons.
+
+**What this requires of the parts built before Phase 4:** Phase 1 must produce thin cards rather than padded ones, so there is something visible to repair. That constraint is in the generation prompt now (`functions/src/prompt.ts`, "Notes get cut off"), tested by the `truncated-dictation` eval case.
+
 ### 4.2 Rehearsal conversation *(browser ↔ Realtime API, WebRTC)*
 
 `gpt-realtime-2.1-mini`. Flow:
@@ -180,6 +202,8 @@ The key is never in the browser and the ephemeral token expires in minutes.
 4. Model grades.
 
 Structural rather than exhortative. Worth the extra plumbing.
+
+**Repair is the second job.** Beyond grading, the rehearsal agent is where thin or bad cards get fixed (§4.1a). A card the generator could not write well becomes a question the agent asks you, once, at the moment you are already thinking about it.
 
 **Context pruning is a cost requirement, not an optimisation.** The Realtime API resubmits full context every turn, so an unmanaged session grows super-linearly in cost — measured sessions have hit $2 for 14 minutes. Clear conversation history between cards. Each card is independent; nothing is lost. This keeps a session near the $0.02–0.05/min floor instead of the $0.15/min ceiling.
 

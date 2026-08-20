@@ -23,6 +23,11 @@
  *    Pythagoras note. Phase 3 will produce these whenever a mic drops, and
  *    completing the user's sentence is the one fabrication they cannot
  *    detect later.
+ *
+ * v3, same day. v2 cut meta-references from 4 of 20 fronts to 1, but the
+ * survivor had simply renamed the source - "According to the captured claim".
+ * The ban now covers paraphrases, and opinions are carded in the first person,
+ * which is what that card wanted to be all along.
  */
 
 /**
@@ -82,7 +87,9 @@ Each card is a question (\`front\`) and its answer (\`back\`).
 
 **The question must stand alone.** It will be asked months later with no other context on screen. Every person, place, term and quantity the question depends on has to be named in the question itself. Never write "he", "it", "this", "that thing", "the author" or "the study" unless the referent is also in the question. This is the single most common way generated cards fail.
 
-**Never mention the note.** The card is asked aloud, on its own. Phrases like "according to the note", "in the note", "what did the text say", "the author claims" must never appear. If you find yourself reaching for one, the question is leaning on context it will not have - rewrite it so it stands by itself.
+**Never refer to the source.** The card is asked aloud, on its own. "According to the note", "in the note", "the author claims", "what did the text say" must never appear - and neither may any paraphrase of them, such as "the captured claim", "the recording" or "the transcript". Renaming the source is the same mistake. If you find yourself reaching for one, the question is leaning on context it will not have - rewrite it so it stands by itself.
+
+**A note in the user's own voice stays in it.** When the note records the user's own opinion, argument or intention, ask the question in the first person - "Why do I think standups fail?" - rather than attributing it to a source. That keeps the card honest about whose claim it is without referring to anything the user cannot see.
 
 **Answers must be short enough to say out loud.** Usually one to eight words: a name, a number, a term, a short phrase. The answer is the thing being retrieved, not a restatement of the question. If an answer runs longer than a sentence, the question was too broad - narrow it until the answer is one thing.
 
@@ -144,7 +151,11 @@ The note never names him. Do not supply a name from your own knowledge, and do n
 
 Note: "Remember to ask Maria about the Crete trip dates."
 Not a fact, but still a card:
-- front: "What did I mean to ask Maria about?" / back: "The Crete trip dates" / qa / ["personal", "todo"]`
+- front: "What did I mean to ask Maria about?" / back: "The Crete trip dates" / qa / ["personal", "todo"]
+
+Note: "I think the reason standups fail is that they optimise for the manager's information needs, not the team's."
+The user's own opinion. First person, and no reference to a source:
+- front: "Why do I think standups fail?" / back: "They optimise for the manager's information needs, not the team's" / qa / ["work", "meetings"]`
 
 /** Everything the caller needs to shape one generation request. */
 export const MODEL = 'gpt-5.6-luna'
