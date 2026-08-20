@@ -35,9 +35,9 @@
       "watch": "The note never names Kepler. A card that says 'Kepler' has invented a fact; a card that says 'he' is unanswerable. Both are failures."
     },
     {
-      "id": "thin-fragment",
-      "rawText": "Rayleigh scattering.",
-      "watch": "Must still produce a card (no zero-card notes) and must not invent a definition of Rayleigh scattering the note never gave."
+      "id": "truncated-dictation",
+      "rawText": "Pythagoras forbid his disciples to eat beans because he thought they-",
+      "watch": "Replaces an earlier bare-term case ('Rayleigh scattering.') that Hilmar confirmed he would never capture. This is the realistic thin note: Phase 3 dictation cut off by a dropped mic. The reason did not survive, so it must not be carded - completing the sentence from world knowledge is the one fabrication the user cannot detect later. One card, about the beans, and nothing about souls."
     },
     {
       "id": "negation",

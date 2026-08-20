@@ -54,6 +54,19 @@ function extractJsonText(body: any): string {
   throw new Error('no output_text in response')
 }
 
+/**
+ * A cloze card is only a cloze if it actually has a blank.
+ *
+ * The model labelled a plain "What is Bayes' theorem?" card as `cloze` in the
+ * first eval sweep. A strict schema cannot catch this - `cloze` is a valid
+ * enum value whatever the front looks like - and the review UI will render a
+ * blankless cloze as a broken card. Cheaper to demote it here than to keep
+ * asking the prompt nicely.
+ */
+function classify(type: unknown, front: string): 'qa' | 'cloze' {
+  return type === 'cloze' && front.includes('___') ? 'cloze' : 'qa'
+}
+
 /** Trim, drop empties, clamp tag counts, and enforce the five-card ceiling. */
 function sanitise(cards: unknown): GeneratedCard[] {
   if (!Array.isArray(cards)) return []
@@ -62,7 +75,7 @@ function sanitise(cards: unknown): GeneratedCard[] {
     .map((c: any) => ({
       front: String(c?.front ?? '').trim(),
       back: String(c?.back ?? '').trim(),
-      type: c?.type === 'cloze' ? ('cloze' as const) : ('qa' as const),
+      type: classify(c?.type, String(c?.front ?? '')),
       tags: Array.isArray(c?.tags)
         ? c.tags
             .map((t: any) => String(t).trim().toLowerCase())
