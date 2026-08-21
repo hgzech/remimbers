@@ -6,7 +6,7 @@ import {
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
+  Timestamp,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore'
@@ -57,17 +57,27 @@ export function groupByNote(cards: Flashcard[]): Map<string, Flashcard[]> {
  * Deliberately does not touch the note. Cards are build output and notes are
  * the source (DESIGN.md section 3) - fixing a card fixes this card, and
  * regenerating from the note later is expected to overwrite it.
+ *
+ * `updatedAt` is a client Timestamp rather than serverTimestamp(), and handed
+ * back to the caller, because it is not an audit trail - it is a content
+ * version. Every review logs the value in force when it was answered, which is
+ * what lets a history spanning an edit be split into comparable halves later.
+ * A server sentinel is unknowable locally, so a review taken straight after an
+ * edit would log the pre-edit value and invent a boundary in the wrong place.
+ * Sub-second fidelity does not matter here; the field agreeing with itself does.
  */
 export function updateCardText(
   uid: string,
   cardId: string,
   fields: { front: string; back: string },
-) {
-  return updateDoc(doc(cardsCollection(uid), cardId), {
+): { updatedAt: Timestamp; written: Promise<void> } {
+  const updatedAt = Timestamp.now()
+  const written = updateDoc(doc(cardsCollection(uid), cardId), {
     front: fields.front.trim(),
     back: fields.back.trim(),
-    updatedAt: serverTimestamp(),
+    updatedAt,
   })
+  return { updatedAt, written }
 }
 
 /**
@@ -76,6 +86,12 @@ export function updateCardText(
  * Batched so the note can never list a card that no longer exists - the
  * library would render a phantom and Phase 2's queue would fetch a missing
  * document.
+ *
+ * The card's `reviews` subcollection is deliberately NOT deleted. Firestore
+ * keeps subcollection documents when their parent goes, and that is what we
+ * want: a card you deleted because it was bad is exactly the calibration data
+ * worth having. Reviews carry their own `cardId` and `noteId` so an orphaned
+ * row still says what it was about.
  */
 export function deleteCard(uid: string, card: Pick<Flashcard, 'id' | 'noteId'>) {
   const batch = writeBatch(db)

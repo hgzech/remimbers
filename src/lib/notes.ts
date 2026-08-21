@@ -3,6 +3,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -53,6 +54,19 @@ export async function retryNote(
 ) {
   await addNote(uid, note.rawText, note.source)
   await deleteDoc(doc(notesCollection(uid), note.id))
+}
+
+/**
+ * One note, for the card in front of you.
+ *
+ * Review shows the source note beside the answer (DESIGN.md section 4.1a), and
+ * a session touches a handful of notes, so a per-card read is cheaper and far
+ * simpler than keeping the whole library subscribed. Returns null if the note
+ * is gone, which is possible: the note is deletable and the card outlives it.
+ */
+export async function fetchNote(uid: string, noteId: string): Promise<Note | null> {
+  const snap = await getDoc(doc(notesCollection(uid), noteId))
+  return snap.exists() ? ({ id: snap.id, ...snap.data() } as Note) : null
 }
 
 export function subscribeToRecentNotes(

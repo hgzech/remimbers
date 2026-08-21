@@ -1,8 +1,11 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
+import { QUEUE_LIMIT, subscribeToDueCount } from '../lib/review'
 
 export function Layout() {
   const { user, signOutNow } = useAuth()
+  const due = useDueCount()
 
   return (
     <div className="app">
@@ -28,7 +31,14 @@ export function Layout() {
           <span>Capture</span>
         </NavLink>
         <NavLink to="/review">
-          <Icon d="M4 5h16v11H4zM8 20h8M12 16v4" />
+          <span className="nav-icon">
+            <Icon d="M4 5h16v11H4zM8 20h8M12 16v4" />
+            {due > 0 && (
+              <span className="nav-badge">
+                {due > QUEUE_LIMIT ? `${QUEUE_LIMIT}+` : due}
+              </span>
+            )}
+          </span>
           <span>Review</span>
         </NavLink>
         <NavLink to="/library">
@@ -38,6 +48,32 @@ export function Layout() {
       </nav>
     </div>
   )
+}
+
+/**
+ * The due count on the Review tab.
+ *
+ * Until Phase 4's push notification exists this is the entire daily-open
+ * mechanism: a number on a tab you already look at. One capped listener for
+ * the life of the session, which is cheap enough to justify that.
+ *
+ * The query pins "now" at subscribe time and a listener never re-evaluates it
+ * as the clock moves, so it is re-issued whenever you change screens. Not
+ * precision - but it makes the count right at the moments you could act on it.
+ */
+function useDueCount(): number {
+  const { user } = useAuth()
+  const { pathname } = useLocation()
+  const [due, setDue] = useState(0)
+
+  // `pathname` is in the dependency list purely to re-issue the query with a
+  // current "now" when you move between screens. It is not used in the body.
+  useEffect(() => {
+    if (!user) return
+    return subscribeToDueCount(user.uid, new Date(), QUEUE_LIMIT, setDue)
+  }, [user, pathname])
+
+  return due
 }
 
 function Icon({ d }: { d: string }) {

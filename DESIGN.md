@@ -1,6 +1,6 @@
 # Remimbers — Design Notes
 
-*v0.3 — 20 Aug 2026. Thinking document, not a spec.*
+*v0.4 — 21 Aug 2026. Thinking document, not a spec.*
 
 ## Decisions log
 
@@ -16,6 +16,7 @@
 | Thin notes | **Never padded from model knowledge**; repaired conversationally at review | Capture stays non-blocking (§4.1a) |
 | Grading | LLM judges correct/incorrect; **user picks the difficulty** | Sidesteps LLM leniency (§4.3) |
 | Text review | **Included** | It *is* Phase 2 — free by construction (§4.4) |
+| Review log | **Schema fixed before the UI**; stores its own FSRS replay state | Rows survive reparameterisation, card deletion, and card edits (§3.1) |
 | Fraud | Accepted | No server-side grade validation |
 
 ---
@@ -119,13 +120,36 @@ Everything under `users/{uid}/…` so the security rules are one line.
 
 ### `users/{uid}/cards/{cardId}/reviews/{reviewId}` — the log
 
-`rating` (1–4), `llmJudgedCorrect` (bool), `reviewedAt`, `durationMs`, `userAnswerTranscript`, `llmRationale`, `mode`.
-
 Three reasons this subcollection matters more than it looks:
 
 1. FSRS parameter optimisation needs a complete review history — you cannot reconstruct it later.
 2. `llmJudgedCorrect` against your subsequent rating is your only measurement of **grader calibration** (§6.3). Without it you're flying blind, and it cannot be backfilled.
 3. `userAnswerTranscript` tells you *why* a card keeps failing — usually the card is bad, not you.
+
+#### 3.1 The row, as built in Phase 2
+
+*Settled 21 Aug 2026, before the review UI, because this is the one shape in the app that can't be migrated by rerunning something.*
+
+Everything else here is derived: delete every card and a regeneration pass over the notes brings them back. A review is an **event** — it happened at a moment, in a state that no longer exists — so the schema is fixed first and carries fields Phase 2 itself has no use for.
+
+| group | fields | why |
+|---|---|---|
+| identity | `cardId`, `noteId` | denormalised out of the path. A collection-group export shouldn't have to parse document paths, and a review outlives its card |
+| the answer | `rating` (1–4), `mode`, `llmJudgedCorrect`, `userAnswerTranscript`, `llmRationale` | §4.3's split: the model's binary, your difficulty |
+| timing | `reviewedAt`, `syncedAt`, `durationMs`, `revealMs` | |
+| replay | `before` (ts-fsrs's own `ReviewLog`), `after`, `scheduler` | |
+| provenance | `cardEditedAt`, `schemaVersion` | |
+
+Four of those took an argument, and the arguments are the point:
+
+- **`llmJudgedCorrect` is `null` in text mode, never `false`.** `false` is a claim — *the grader said you were wrong*. Text review runs no grader at all. Collapsing "nobody judged" into "judged incorrect" would silently poison the exact number §6.3 exists to produce, and every Phase 2 review would be in the denominator of a calibration statistic it was never part of.
+- **`before` is stored, not recomputed.** In principle the pre-review state is replayable from the card's whole history in order. In practice Phase 5 *changes the parameters*, and a replay under new weights doesn't reproduce the state the old weights actually produced. Storing ts-fsrs's `ReviewLog` verbatim, alongside the `scheduler` block that produced `after`, makes every row self-describing: you can refit without reconstructing anything, and a row survives its card being deleted or regenerated.
+- **`reviewedAt` is a client timestamp, deliberately.** It is the exact instant handed to FSRS, so the row agrees with the arithmetic that was actually applied; a `serverTimestamp()` would also be unavailable offline, where review is expressly meant to work. `syncedAt` is the server's, and bounds it from outside — the only defence against a wrong device clock quietly corrupting the intervals the optimiser learns from.
+- **`cardEditedAt` is the card's `updatedAt` at review time.** Cards get fixed at the moment they annoy you (§4.1a), so card text churns by design. Two reviews of "Why did he forbid it?" and of the repaired question are not measurements of the same thing. Logging the content version lets that history be split into comparable halves later. It's also why answering a card leaves `updatedAt` alone — and why editing one writes a client timestamp, so the value is knowable locally the instant it changes.
+
+`revealMs` (shown → answer revealed) is separated from `durationMs` (shown → rated) because the first is retrieval effort and the second includes deciding which button to press. Cheap now, unbackfillable later.
+
+**Deleting a card does not delete its reviews.** Firestore keeps subcollection documents when the parent goes, which is what we want: a card deleted for being bad is precisely the calibration data worth keeping.
 
 **Why keep the note?** Cards are derived data. Keeping `rawText` means you can regenerate the whole deck when you improve the generation prompt, and it gives the grading model context ("the source said…"). Treat notes as source and cards as build output.
 
@@ -329,6 +353,21 @@ Log `llmJudgedCorrect` on every review alongside the rating you chose. Since the
 
 After a few hundred reviews that's a real number. Systematic leniency is a prompt fix; noise is a model change. Without the field you'll have impressions instead of data, and it cannot be backfilled — which is why it's in the schema from Phase 0 even though nothing writes it until Phase 4.
 
+Phase 2 writes `null` there rather than `false`, for the reason in §3.1: text reviews must be *outside* the calibration sample, not counted as the grader getting it wrong.
+
+### 6.4 The session queue, and why `Again` means today
+
+*Added 21 Aug 2026, building Phase 2.*
+
+FSRS's learning steps are in **minutes**, not days: a card you rate `Again` is due in one minute. That collides with the due query in a way worth naming, because the obvious implementations are both wrong.
+
+- A **live listener** on the due query re-adds the card the instant its own grade lands — the query it just left is the query it immediately re-enters. The screen flickers and the card never leaves.
+- A **fetch-once queue that drops graded cards** turns `Again` into "see you next week", which is the opposite of what the button says.
+
+So the session fetches once with `getDocs`, owns its queue in memory, and re-queues any card whose new due date falls inside the longest (re)learning step — currently 15 minutes, derived from the parameters rather than hardcoded so Phase 5 can't leave it stale. The server is consulted again only when the local queue runs dry. Offline the initial fetch resolves from cache, which is the whole point of persistence.
+
+The four buttons show the interval each would produce, from `scheduler.repeat()` — the same scheduler that `next()` runs a moment later, so there is no second implementation to drift out of agreement with the first.
+
 ---
 
 ## 7. Cost model
@@ -384,8 +423,8 @@ The ordering principle: **the app should be genuinely useful before any of the f
 | Phase | Deliverable | Proves |
 |---|---|---|
 | **0** | Vite + React + TS skeleton, Google auth + allowlist, text capture, Firestore rules, Pages deploy | Plumbing works end to end ✅ |
-| **1** | **Text** capture → LLM → cards → library view with edit/delete | **Card quality.** The riskiest assumption, tested cheapest. If the LLM writes bad cards, nothing downstream matters |
-| **2** | FSRS + classic review UI with manual Again/Hard/Good/Easy buttons | You now have a working Anki. Usable daily. Start accumulating real review data |
+| **1** | **Text** capture → LLM → cards → library view with edit/delete ✅ | **Card quality.** The riskiest assumption, tested cheapest. If the LLM writes bad cards, nothing downstream matters |
+| **2** | FSRS + classic review UI with manual Again/Hard/Good/Easy buttons | You now have a working Anki. Usable daily. Start accumulating real review data ✅ |
 | **3** | Voice capture: MediaRecorder → transcribe → note, PWA install, offline queue | The actual product thesis — is capture fast enough that you use it? |
 | **4** | Realtime rehearsal, tool-call grading, confirm step, cost caps | The differentiator |
 | **5** | FSRS parameter optimisation on your own review log; grader calibration review | Compounding quality |

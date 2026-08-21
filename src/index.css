@@ -335,3 +335,147 @@ body {
 }
 
 .list-note { padding: 14px 16px 0; margin: 0; }
+
+/* ---------- review ---------- */
+
+.review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px 16px 16px;
+  gap: 10px;
+}
+
+.review-progress {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.review-count { color: var(--text-dim); }
+
+.review-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: #f2777a;
+}
+
+/*
+ * The card itself is the reveal button: on a phone the whole face is a
+ * comfortable target, and there is nothing else on screen to hit by mistake.
+ */
+.review-face {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 4px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.review-face:disabled { cursor: default; opacity: 1; }
+
+.review-front {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.4;
+}
+
+.review-rule {
+  width: 100%;
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 18px 0;
+}
+
+.review-back {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.45;
+  color: var(--accent);
+}
+
+.review-context { display: grid; }
+.review-context-bar { display: flex; align-items: center; gap: 8px; }
+
+.review-note {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.review-editor {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.review-reveal { width: 100%; }
+.review-actions { display: flex; }
+
+/* Four buttons, one row, thumb height. The interval under each label is what
+   turns the choice from a guess into a decision. */
+.grade-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.grade {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 11px 2px;
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.grade-label { font-size: 13px; font-weight: 500; }
+.grade-interval { font-size: 11px; color: var(--text-dim); }
+
+.grade-again { border-color: #6d3739; }
+.grade-again .grade-label { color: #f2777a; }
+.grade-hard { border-color: #6b5730; }
+.grade-hard .grade-label { color: #d9a441; }
+.grade-good { border-color: var(--accent); }
+.grade-good .grade-label { color: var(--accent); }
+.grade-easy { border-color: #3a6b60; }
+.grade-easy .grade-label { color: #63c6a8; }
+
+.review-done { margin: 0; font-size: 20px; }
+
+/* ---------- due badge ---------- */
+
+.nav-icon { position: relative; display: inline-flex; }
+
+.nav-badge {
+  position: absolute;
+  top: -5px;
+  left: 13px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
