@@ -479,3 +479,5 @@ body {
   line-height: 16px;
   text-align: center;
 }
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }

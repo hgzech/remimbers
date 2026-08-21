@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
@@ -12,16 +12,36 @@ interface AuthState {
   access: Access
   /** Human-readable reason when access is 'not-allowed' or 'blocked'. */
   detail: string | null
+  /** True while a popup is open, so the button can refuse a second click. */
+  signingIn: boolean
   signIn: () => Promise<void>
   signOutNow: () => Promise<void>
 }
 
 const Ctx = createContext<AuthState | null>(null)
 
+/**
+ * Sign-in outcomes that are not failures.
+ *
+ * - cancelled-popup-request: a SECOND popup was opened, so Firebase rejected
+ *   the first one. Almost always a double-tap. The surviving popup is usually
+ *   still going fine, which is why treating this as fatal is actively wrong.
+ * - popup-closed-by-user / user-cancelled: they changed their mind.
+ *
+ * None of these should show an error. Just return to the sign-in screen.
+ */
+const BENIGN_SIGNIN_ERRORS = new Set([
+  'auth/cancelled-popup-request',
+  'auth/popup-closed-by-user',
+  'auth/user-cancelled',
+])
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [access, setAccess] = useState<Access>('loading')
   const [detail, setDetail] = useState<string | null>(null)
+  const [signingIn, setSigningIn] = useState(false)
+  const inFlight = useRef(false)
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (u) => {
@@ -68,15 +88,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     access,
     detail,
+    signingIn,
     signIn: async () => {
+      // Guard at the source: a second popup is what generates
+      // cancelled-popup-request in the first place.
+      if (inFlight.current) return
+      inFlight.current = true
+      setSigningIn(true)
+
       try {
         await signInWithPopup(auth, googleProvider)
       } catch (err) {
         const code = err instanceof FirebaseError ? err.code : String(err)
-        // Popup failures are silent by nature - the window just closes.
+
+        if (BENIGN_SIGNIN_ERRORS.has(code)) {
+          console.warn('[remimbers] sign-in attempt abandoned:', code)
+          return
+        }
+
+        // A rejected promise from a superseded attempt must never overwrite a
+        // session that another attempt already established.
+        if (auth.currentUser) {
+          console.warn('[remimbers] ignoring stale sign-in error:', code)
+          return
+        }
+
         setAccess('blocked')
-        setDetail(`Sign-in failed: ${code}`)
+        setDetail(
+          code === 'auth/popup-blocked'
+            ? 'Your browser blocked the sign-in popup. Allow popups for this ' +
+                'site, then try again.'
+            : `Sign-in failed: ${code}`,
+        )
         console.error('[remimbers] sign-in failed', err)
+      } finally {
+        inFlight.current = false
+        setSigningIn(false)
       }
     },
     signOutNow: async () => {
