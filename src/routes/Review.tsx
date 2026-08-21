@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { Grade } from 'ts-fsrs'
+import { Rating, type Grade } from 'ts-fsrs'
 import { useAuth } from '../auth/AuthProvider'
 import { deleteCard, updateCardText } from '../lib/cards'
 import { fetchNote } from '../lib/notes'
@@ -37,9 +37,16 @@ export function Review() {
   const shownAt = useRef(0)
   const revealedAt = useRef<number | null>(null)
 
+  // One grade per card shown. Two taps inside a single frame would otherwise
+  // both run against the same pre-review state and write two review rows, the
+  // second of them describing a schedule that was never applied.
+  const shownGen = useRef(0)
+  const gradedGen = useRef(-1)
+
   const card = queue?.[0] ?? null
 
   const showFrom = useCallback((cards: Flashcard[]) => {
+    shownGen.current += 1
     shownAt.current = Date.now()
     revealedAt.current = null
     setRevealed(false)
@@ -94,6 +101,9 @@ export function Review() {
   const grade = useCallback(
     (rating: Grade) => {
       if (!uid || !card) return
+      if (gradedGen.current === shownGen.current) return
+      gradedGen.current = shownGen.current
+
       const now = new Date()
       const t = now.getTime()
 
@@ -138,9 +148,13 @@ export function Review() {
     function onKey(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === ' ' || e.key === 'Enter') {
+        // Space and Enter are how a browser activates a focused button. If one
+        // has focus - you just clicked it - let it do its own job rather than
+        // grading twice.
+        if ((e.target as HTMLElement | null)?.tagName === 'BUTTON') return
         e.preventDefault()
         if (!revealed) reveal()
-        else grade(3 as Grade)
+        else grade(Rating.Good)
         return
       }
       if (!revealed) return
@@ -338,6 +352,7 @@ function CardEditor({
   function save() {
     if (!front.trim() || !back.trim()) return
     const patch = updateCardText(uid, card.id, { front, back })
+    patch.written.catch(() => {})
     onDone({ ...card, front: front.trim(), back: back.trim(), updatedAt: patch.updatedAt })
   }
 

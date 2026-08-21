@@ -137,7 +137,7 @@ function CardRow({ card, uid }: { card: Flashcard; uid: string }) {
 
   function save() {
     if (!front.trim() || !back.trim()) return
-    void updateCardText(uid, card.id, { front, back })
+    void updateCardText(uid, card.id, { front, back }).written
     setEditing(false)
   }
 

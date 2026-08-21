@@ -1,6 +1,6 @@
 # Remimbers — Design Notes
 
-*v0.4 — 21 Aug 2026. Thinking document, not a spec.*
+*v0.5 — 21 Aug 2026. Thinking document, not a spec.*
 
 ## Decisions log
 
@@ -368,6 +368,86 @@ So the session fetches once with `getDocs`, owns its queue in memory, and re-que
 
 The four buttons show the interval each would produce, from `scheduler.repeat()` — the same scheduler that `next()` runs a moment later, so there is no second implementation to drift out of agreement with the first.
 
+### 6.5 Retention tiers, and why they are nearly free
+
+*Added 21 Aug 2026. Phase 6 — nothing here changes Phases 3–5, and it is written down now only so the review log keeps being worth what it costs.*
+
+Not every card deserves the same retention. Greek case endings are load-bearing — forget one and the sentence stops parsing, and the failure blocks everything downstream. That Pythagoras forbade beans because he thought they held transmigrating souls is terminal knowledge: nothing sits on top of it, and the cost of a miss is a moment of mild annoyance.
+
+The structural fact that makes this cheap: **desired retention is not part of the memory model.** FSRS stores stability and difficulty per card. Retention enters only at scheduling time, as a multiplier on stability:
+
+```
+interval = (S / FACTOR) · (r^(1/DECAY) − 1)
+```
+
+At `r = 0.9` that collapses to `interval = S` by construction — which is what stability *means*. Everything else is a constant rescaling:
+
+| Target retention | Interval vs. stability | Review load vs. 90% |
+|---|---|---|
+| 95% | 0.46× | ~2× |
+| 90% | 1.0× | 1× |
+| 85% | 1.64× | ~0.6× |
+| 80% | 2.40× | ~0.45× |
+| 75% | 3.32× | ~0.35× |
+
+(FSRS-6 fits `DECAY` per user rather than fixing it, so the exact multipliers drift. The shape holds.)
+
+Three consequences worth having in writing:
+
+1. **Retroactive changes are free.** Retention is a per-request parameter, so re-tiering a card reschedules it correctly from its existing stability. No migration, no history invalidation, nothing to replay. Which means there is no cost to shipping everything at 90% and splitting later — and therefore no reason to build this before Phase 6.
+2. **Tiers cost nothing in fitted data.** The optimiser never sees a retention setting; it sees `(card, elapsed time, grade)` and fits a forgetting curve. If anything, mixed retention *helps* the fit by sampling the curve at a wider spread of intervals. The ~400–1,000-review threshold is about **parameters**, not tiers — an easy and expensive thing to conflate, since it would otherwise argue for keeping tier count low to keep groups large. It does not.
+3. **One global parameter set, probably forever.** Difficulty is already a per-card fitted value and absorbs most of the "this material behaves differently" variance. Separate parameter sets per tier only pay off across genuinely huge, genuinely dissimilar bodies of material — tens of thousands of reviews each — which this deck will not have.
+
+So: three tiers, spaced far enough apart that choosing between them means something.
+
+| Tier | Retention | Cost per card | For |
+|---|---|---|---|
+| **Core** | 95% | ~2× | Load-bearing — grammar, anything other knowledge depends on |
+| **Standard** | 90% | 1× | The middle |
+| **Casual** | 80% | ~0.45× | Leaf knowledge, nice-to-have |
+
+That is a ~4.4× spread top to bottom. Something like 80/85/90 spans only 2.2× and puts a tier five points from the default, which nobody will ever be confident choosing. The floor is 80 rather than 75 because below that you fail one card in four, and FSRS's post-lapse stability penalty means low-retention cards can churn — lapsing repeatedly rather than maturing. The theoretical minimum-workload point sits near 70–85%, but minimum workload is not the same as a tolerable five minutes.
+
+**Store the tier, derive the retention.** The card carries `"casual"`, not `0.8`; the mapping lives in `src/lib/fsrs.ts` next to the parameters, for the same reason `SESSION_HORIZON_MS` is derived there rather than hardcoded. Retuning what Core means is then one line, and reschedules the whole tier instantly — which is only true because of consequence 1 above.
+
+#### Voice cues as the tier signal
+
+The tier should come out of the capture utterance, not a separate sorting step — a sort step is exactly the friction §5 exists to remove. *"It's interesting that Pythagoras forbade beans…"* is Casual. *"It's important to know…"* is Core. This is how people already talk; it costs nothing to say.
+
+Three rules:
+
+- **Not keyword matching.** Exact triggers are brittle and impose a memorisation burden — was it "interesting" or "fun" or "neat"? The tier is a field in the §4.1 JSON schema, classified by the same call that writes the cards, with those phrasings as strong priors. The classification is free; the call is already happening.
+- **Show the inferred tier, one tap to change it.** Inference without visible feedback is where these systems lose trust. This is the same principle as cards being auto-accepted and fixable at review time, applied to a second field.
+- **The cue does double duty.** *"It's interesting that X"* also marks X as the salient fact, which is the cloze target. One utterance, two signals, no extra interaction.
+
+What an *absent* cue means is the open question. The dull answer is a default tier (§6.6 argues that should be Casual). The better one: uncued notes land in a staging queue and cued ones go straight into rotation, which makes a cue a statement of confidence — "I have already decided about this one" — rather than just a label, and puts the triage cost only on the cards you were genuinely unsure about. Decide after Phase 3 shows how often cueing actually happens in real captures.
+
+The predictable side effect is that "it's interesting that" drifts from meaning *interesting* to meaning *cheap*. That is fine. It means a command language got learned without anyone having to teach it.
+
+### 6.6 Load forecasting, and the number that lies to you
+
+*Added 21 Aug 2026. Phase 6, alongside §6.5.*
+
+The target is Duolingo time: **about five minutes a day.** That is the real design constraint and it is tighter than it sounds.
+
+Steady state is roughly **ten reviews per day for every one new card per day** at 90% retention — each card generates ~8 reviews in its first year, ~1.5 in the second, ~0.8 in the third, decaying as intervals stretch, summed across every card ever added. Five minutes at ~8s per card is ~40 reviews. Running that backwards:
+
+| Mix | New cards/day |
+|---|---|
+| All Core (95%) | ~2 |
+| All Standard (90%) | ~4 |
+| All Casual (80%) | ~9 |
+
+Two things fall out. First, **at this budget Casual is probably the default and Standard the promotion** — if everything lands at 90%, four cards a day consumes the entire allowance and the app feels stingy exactly when it is being enjoyed. Unless Greek grammar is the point and the trivia is garnish, which is a question about what Remimbers is *for* and deserves an explicit answer rather than an inherited default.
+
+Second, and this is the trap the section is named after: **the 10× multiplier is steady state, reached after two or three years.** In month two the load is a third of it. Adding ten a day will feel entirely fine for the better part of a year and then quietly become fifteen minutes. So the number on screen must be the *projected* steady-state load, not the current one. Current load is reassuring and wrong.
+
+**Budget in measured seconds, not cards.** Grammar production cards run 15–20s; trivia recognition runs 5s. Any static per-card estimate is wrong for this deck in particular — and the measurement already exists, because §3.1 puts `durationMs` and `revealMs` on every review row. Back-solve the sustainable add rate from measured per-tier cost. It self-corrects as card formulation improves, and it is a second payoff from a log that was preserved for a different reason.
+
+The forecast itself is cheap: run `scheduler.repeat()` forward over the existing deck plus an assumed add rate. No model call, no server, no new data — the same arithmetic Phase 2 already does to label the four buttons. The graph is projected reviews/day over ~3 years, stacked by tier, with the five-minute budget drawn as a horizontal rule. The thing worth looking at is where the curve crosses it.
+
+The encouraging half, worth recording so the numbers above don't read as discouraging: 40 reviews/day is *robust*. A week away is a 280-card backlog — two long sessions, not a death spiral — where a 200/day habit would leave 1,400 and end the habit. And 4 cards a day is ~1,500 a year, ~4,400 after three years. Small budgets compound much better than they feel.
+
 ---
 
 ## 7. Cost model
@@ -428,10 +508,13 @@ The ordering principle: **the app should be genuinely useful before any of the f
 | **3** | Voice capture: MediaRecorder → transcribe → note, PWA install, offline queue | The actual product thesis — is capture fast enough that you use it? |
 | **4** | Realtime rehearsal, tool-call grading, confirm step, cost caps | The differentiator |
 | **5** | FSRS parameter optimisation on your own review log; grader calibration review | Compounding quality |
+| **6** | Retention tiers from voice cues + steady-state load forecast (§6.5, §6.6) | Sustainability — keeping the habit inside five minutes a day |
 
 Phase 1 is deliberately first. Paste in twenty notes of the kind you'd actually speak, look hard at the cards, and iterate the prompt until they're good. That prompt is the product; everything else is scaffolding around it.
 
 Phase 2 gives you something worth opening every day, which matters: you need real cards and real review history before the Phase 4 conversation has anything interesting to work with.
+
+Phase 6 is last for two reasons, both in §6.5: re-tiering is retroactively free, so nothing is lost by shipping everything at 90% first, and the forecast is only honest once Phase 5 has fitted parameters and enough reviews to measure real per-tier seconds from. Building it earlier would mean guessing at both.
 
 ---
 
@@ -442,7 +525,8 @@ The v0.1 questions are answered in the decisions log. What remains:
 1. **Where is the correct/incorrect line?** Anki's bar is retrieval, not recognition — "something about souls?" is a miss. Worth writing the rubric with three or four worked examples *before* writing the prompt, because it's the one judgement you're delegating entirely.
 2. **Does the realtime model do the judging, or a text model?** Now a much smaller question than in v0.1, since it's only a binary. Start with the realtime model — one round trip, cheapest — and let §6.3's data decide whether to move it.
 3. **Daily cost cap: what number?** §7 needs a concrete ceiling on minted realtime tokens before anyone else is invited. Easier to pick after you've seen a week of your own sessions.
-4. **Do you want the daily-due push notification?** iOS supports it for installed PWAs, and it's arguably the one place Remimbers should behave like a reminders app. Not needed before Phase 4.
+4. **Which tier is the default, and does an uncued note go straight into rotation?** §6.5 and §6.6 disagree with each other's instincts here, and the tiebreaker is data Phase 3 will produce: how often you actually cue, and whether the deck is mostly trivia with grammar on the side or the reverse.
+5. **Do you want the daily-due push notification?** iOS supports it for installed PWAs, and it's arguably the one place Remimbers should behave like a reminders app. Not needed before Phase 4.
 
 ---
 
