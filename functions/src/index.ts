@@ -7,6 +7,7 @@ import { getAuth } from 'firebase-admin/auth'
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { createEmptyCard } from 'ts-fsrs'
 import { generateCards } from './generate.js'
+import { transcribeAudio } from './transcribe.js'
 
 const app = initializeApp()
 
@@ -233,5 +234,44 @@ export const dryRunCards = onRequest(
   },
 )
 
-// Phase 3 adds: transcribe    (POST audio -> text)
+/**
+ * Audio bytes -> text.
+ *
+ * The browser posts the raw recording with `Content-Type` set to whatever
+ * MediaRecorder produced - not multipart from the client. Multipart is only
+ * what OpenAI's endpoint wants on the far side (see transcribeAudio); making
+ * the client build a FormData just to have this function unwrap it again
+ * would be pure ceremony.
+ */
+export const transcribe = onRequest(
+  { ...opts, secrets: [openaiKey] },
+  async (req, res) => {
+    let uid: string
+    try {
+      uid = (await requireUser(req.headers.authorization)).uid
+    } catch {
+      res.status(401).json({ ok: false, error: 'unauthenticated' })
+      return
+    }
+
+    const mimeType = req.get('content-type') || 'audio/webm'
+    const audio = req.rawBody
+
+    if (!audio || audio.length === 0) {
+      res.status(400).json({ ok: false, error: 'empty audio body' })
+      return
+    }
+
+    try {
+      const text = await transcribeAudio(audio, mimeType, openaiKey.value())
+      logger.info('transcribed', { uid, bytes: audio.length, chars: text.length })
+      res.json({ text })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.error('transcription failed', { uid, message })
+      res.status(502).json({ ok: false, error: message })
+    }
+  },
+)
+
 // Phase 4 adds: realtimeToken (mint ephemeral client secret, with a daily cap)

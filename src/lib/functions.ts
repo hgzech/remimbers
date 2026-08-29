@@ -32,6 +32,37 @@ export async function callFunction<T>(name: string, body: unknown): Promise<T> {
 }
 
 /**
+ * POST a recorded blob to /transcribe and get text back.
+ *
+ * Not `callFunction`: that helper JSON-encodes its body, and audio needs to
+ * cross the wire as raw bytes with the recorder's own Content-Type - the
+ * Function unwraps it directly rather than requiring the client to build a
+ * multipart request just to have the Function parse it back apart.
+ */
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const user = auth.currentUser
+  if (!user) throw new Error('not signed in')
+  if (!functionsBaseUrl) {
+    throw new Error('VITE_FUNCTIONS_BASE_URL is empty - deploy functions first')
+  }
+
+  const res = await fetch(`${functionsBaseUrl}/transcribe`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': blob.type || 'application/octet-stream',
+      Authorization: `Bearer ${await user.getIdToken()}`,
+    },
+    body: blob,
+  })
+
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(`transcribe ${res.status}: ${JSON.stringify(json).slice(0, 300)}`)
+  }
+  return String(json.text ?? '')
+}
+
+/**
  * A console handle for iterating on the generation prompt (evals/run.js).
  *
  * This exposes nothing the signed-in user could not already do from devtools -
