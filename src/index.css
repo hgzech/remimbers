@@ -172,25 +172,35 @@ body {
 /* ---------- capture ---------- */
 
 /*
- * Voice-first: the mic dominates the screen, centered in the thumb-reach
- * zone. Text entry is a deliberately smaller fallback beneath it, not a
- * second primary action - so it neither autofocuses nor competes for space.
+ * Voice-first: the mic dominates the screen, anchored in the bottom third so
+ * it's a one-thumb reach. The spacer above it soaks up the leftover space -
+ * 2 parts above the button group to 1 part below - and text entry stays a
+ * hidden fallback beneath it, not a second primary action.
  */
 .capture {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 24px 16px 16px;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+.capture-spacer {
+  flex: 2;
 }
 
 .capture-voice {
-  flex: 1;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 14px;
-  min-height: 0;
+}
+
+.capture-prompt {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-dim);
+  text-align: center;
 }
 
 .mic-btn {
@@ -205,11 +215,15 @@ body {
   background: var(--surface-2);
   color: var(--text);
   cursor: pointer;
-  touch-action: manipulation;
+  /* Press-and-hold, not tap: a long press must not select text, show iOS's
+     callout menu, or let the page scroll while the finger stays down. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
 .mic-btn svg { width: 52px; height: 52px; }
-.mic-btn:disabled { opacity: 0.5; cursor: default; }
 
 .mic-btn.recording {
   background: #f2777a;
@@ -235,19 +249,21 @@ body {
   margin: -6px 0 0;
 }
 
-.capture-text {
-  flex-shrink: 0;
-  padding-top: 14px;
-  padding-bottom: env(safe-area-inset-bottom);
+.capture-footer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 22px;
 }
 
-.capture-text-label {
-  margin: 0 0 6px;
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+.capture-type-toggle {
   color: var(--text-dim);
-  text-align: center;
+  font-size: 13px;
+}
+
+.capture-text {
+  width: 100%;
 }
 
 .capture-text-input {

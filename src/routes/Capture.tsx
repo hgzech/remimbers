@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { addNote } from '../lib/notes'
 import { transcribeAudio } from '../lib/functions'
@@ -19,6 +20,11 @@ interface QueueEntry extends QueuedAudio {
   status: 'uploading' | 'error'
   error?: string
 }
+
+// Below this, a press+release is a tap (start, and stay recording until the
+// next tap). At or above it, it's a hold (WhatsApp-style: recording only
+// while the finger is down, stopping automatically on release).
+const HOLD_THRESHOLD_MS = 500
 
 function MicIcon() {
   return (
@@ -47,8 +53,19 @@ export function Capture() {
   const [starting, setStarting] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [queue, setQueue] = useState<QueueEntry[]>([])
+  const [showText, setShowText] = useState(false)
   const chunksRef = useRef<Blob[]>([])
   const recorderRef = useRef<MediaRecorder | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const pressStartRef = useRef(0)
+  // Set once the initiating press releases early enough to count as a tap
+  // rather than a hold - marks that the *next* press/release should stop the
+  // recording, rather than being evaluated as its own hold-vs-tap.
+  const tapArmedRef = useRef(false)
+
+  useEffect(() => {
+    if (showText) textareaRef.current?.focus()
+  }, [showText])
 
   // Crash insurance (DESIGN.md section 5.1): anything still in IndexedDB from
   // a previous session - a dropped signal, a killed tab mid-upload - retries
@@ -132,12 +149,32 @@ export function Capture() {
     setRecording(false)
   }
 
-  function toggleRecording() {
-    if (recording) {
+  // Pointer capture, not click: the button must keep receiving events even
+  // if the finger drifts off it mid-press, or a release would never arrive.
+  function onMicPointerDown(e: PointerEvent<HTMLButtonElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    if (recording || starting) return
+    pressStartRef.current = Date.now()
+    tapArmedRef.current = false
+    void startRecording()
+  }
+
+  function onMicPointerUp() {
+    if (!recording) return
+    if (!tapArmedRef.current) {
+      // This is the release of the press that started the recording -
+      // decide whether it was a tap (keep recording) or a hold (stop now).
+      const heldFor = Date.now() - pressStartRef.current
+      if (heldFor < HOLD_THRESHOLD_MS) {
+        tapArmedRef.current = true
+        return
+      }
       stopRecording()
-    } else if (!starting) {
-      void startRecording()
+      return
     }
+    // A second press/release while already recording always stops it.
+    tapArmedRef.current = false
+    stopRecording()
   }
 
   async function handleRecorded(blob: Blob, mimeType: string) {
@@ -156,6 +193,7 @@ export function Capture() {
     void addNote(user.uid, trimmed, 'text')
 
     setText('')
+    setShowText(false)
     setFlash(true)
     setTimeout(() => setFlash(false), 1400)
   }
@@ -178,13 +216,19 @@ export function Capture() {
 
   return (
     <div className="capture">
+      <div className="capture-spacer" />
+
       <div className="capture-voice">
+        <p className="capture-prompt">What do you want to remember?</p>
+
         <button
           type="button"
           className={`mic-btn ${recording ? 'recording' : ''}`}
-          onClick={toggleRecording}
-          disabled={starting}
-          aria-label={recording ? 'Stop recording' : 'Start voice capture'}
+          onPointerDown={onMicPointerDown}
+          onPointerUp={onMicPointerUp}
+          onPointerCancel={onMicPointerUp}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-label={recording ? 'Stop recording' : 'Record a voice note'}
         >
           {recording ? <StopIcon /> : <MicIcon />}
         </button>
@@ -198,20 +242,28 @@ export function Capture() {
         )}
       </div>
 
-      <div className="capture-text">
-        <p className="capture-text-label">or type</p>
-        <textarea
-          className="capture-text-input"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Type a note instead"
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save()
-          }}
-        />
-        {text.trim() && (
-          <button className="btn btn-primary capture-text-save" onClick={save}>
-            Capture
+      <div className="capture-footer">
+        {showText ? (
+          <div className="capture-text">
+            <textarea
+              ref={textareaRef}
+              className="capture-text-input"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Type a note instead"
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save()
+              }}
+            />
+            {text.trim() && (
+              <button className="btn btn-primary capture-text-save" onClick={save}>
+                Capture
+              </button>
+            )}
+          </div>
+        ) : (
+          <button type="button" className="linkbtn capture-type-toggle" onClick={() => setShowText(true)}>
+            Type instead
           </button>
         )}
       </div>
