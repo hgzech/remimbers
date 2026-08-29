@@ -174,6 +174,10 @@ export function VoiceReview() {
   const finish = useCallback(
     async (opts?: { immediate?: boolean }) => {
       if (!opts?.immediate) {
+        // Mic off first. The session is ending either way, and a stray word or
+        // a cough during the wait would otherwise wake server VAD, trigger a
+        // fresh response, and reset the silence the wait is looking for.
+        sessionRef.current?.setMuted(true)
         await sessionRef.current?.waitForAudioIdle()
       }
       sessionRef.current?.close()

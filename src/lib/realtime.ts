@@ -27,8 +27,9 @@ export interface RealtimeSession {
    * on any particular server event.
    *
    * Waits for speech to start (up to `startTimeoutMs`), then for it to stay
-   * quiet for `silenceMs`. Always resolves - a timeout is a reason to close
-   * anyway, not an error.
+   * quiet for `silenceMs` - 2s by default, which is forgiving enough that a
+   * pause between sentences does not read as the end of the turn. Always
+   * resolves - a timeout is a reason to close anyway, not an error.
    */
   waitForAudioIdle(opts?: {
     silenceMs?: number
@@ -142,7 +143,7 @@ export async function createRealtimeSession(
       micTrack.enabled = !muted
     },
     async waitForAudioIdle(opts) {
-      const silenceMs = opts?.silenceMs ?? 700
+      const silenceMs = opts?.silenceMs ?? 2000
       const startTimeoutMs = opts?.startTimeoutMs ?? 4000
       const maxMs = opts?.maxMs ?? 30000
       const THRESHOLD = 0.02
