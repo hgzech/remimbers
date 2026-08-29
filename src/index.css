@@ -43,7 +43,7 @@ body {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: max(env(safe-area-inset-top), 12px) 16px 10px;
   border-bottom: 1px solid var(--border);
 }
@@ -184,8 +184,18 @@ body {
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
 }
 
+.capture-prompt {
+  margin: 12px auto 0;
+  max-width: 22ch;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  text-align: center;
+}
+
 .capture-spacer {
-  flex: 2;
+  flex: 3;
 }
 
 .capture-voice {
@@ -194,13 +204,6 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 14px;
-}
-
-.capture-prompt {
-  margin: 0;
-  font-size: 15px;
-  color: var(--text-dim);
-  text-align: center;
 }
 
 .mic-btn {

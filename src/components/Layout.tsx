@@ -10,7 +10,6 @@ export function Layout() {
   return (
     <div className="app">
       <header className="app-header">
-        <span className="wordmark small">remimbers</span>
         <button
           className="avatar"
           onClick={signOutNow}

@@ -216,11 +216,11 @@ export function Capture() {
 
   return (
     <div className="capture">
+      <p className="capture-prompt">What do you want to remember?</p>
+
       <div className="capture-spacer" />
 
       <div className="capture-voice">
-        <p className="capture-prompt">What do you want to remember?</p>
-
         <button
           type="button"
           className={`mic-btn ${recording ? 'recording' : ''}`}
