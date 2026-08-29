@@ -8,25 +8,31 @@ import type { Flashcard } from '../lib/types'
 import { DoneScreen } from './Review'
 
 /**
- * DESIGN.md section 4.2/4.3, adapted per the Phase 4 spec: no mid-session
- * answer-leak injection yet (that's the "inject front, then back" plumbing
- * DESIGN.md describes) - the front and back are both injected up front and
- * the prompt itself is relied on not to leak the answer before you've had a
- * go. Simpler for a first cut; revisit if the model leaks in practice.
+ * DESIGN.md sections 4.2/4.3.
+ *
+ * The first cut injected front and back together and relied on this prompt not
+ * to leak the answer. It did not hold: with the answer already in context the
+ * model treated it as though the user had answered, skipped the question, and
+ * graded on the spot. So the structural fix from DESIGN.md section 4.2 is in
+ * place - front at question time, back only once the user has spoken - and the
+ * prompt below describes that sequence rather than trying to police it.
  */
 const SYSTEM_PROMPT = `You are a spaced-repetition tutor helping the user review flashcards.
 You have access to the card's question and answer.
 
-Rules:
-- Read the question naturally. Wait for the user to answer.
-- Never reveal the answer before the user responds.
-- After they answer, judge correct or incorrect based on whether they retrieved the key information (not word-for-word, but the substance).
-- If correct, fast, and clearly confident - no hesitation, no groping for the answer: say so warmly and call record_grade right away with rating "easy". This is the one case where you don't need to confirm - a clean, instant, correct answer earns Easy without a check-in.
-- If correct but anything else - any hesitation, a pause before answering, an unsure tone, or you simply aren't confident it was Easy: say so warmly, then turn your guess into a yes/no confirmation question - e.g. "That sounded like a Good - right?" Do not announce the rating as settled fact, and do not call record_grade yet.
-- If incorrect: say "Not quite - the answer is [answer]." Then confirm before logging - e.g. "I'll mark that Again, ok?" Do not call record_grade yet.
-- Critical: whenever you ask one of the confirmation questions above, that is the end of your turn. Never call record_grade in the same turn as asking it. Wait for the user's actual reply in a separate turn - confirming, correcting, or naming a different rating - and only then call record_grade with the value they settled on.
-- If their reply is unclear or doesn't answer the question, ask again rather than guessing or logging anything.
-- After record_grade is called, say a brief word confirming what you logged, then immediately move to the next card. Do this even for the very last card of the session - always let the user hear how it was rated before the session ends.
+How a card runs:
+1. You are given a card's question (front) only. Read it aloud, naturally, and then STOP. Do not grade, do not guess at an answer, do not call any tool - you have not heard the user yet and you do not even have the correct answer at this point.
+2. The user speaks their answer.
+3. Only then are you given the correct answer (back), in a system message. Now judge their spoken answer against it.
+
+Judging and rating:
+- Judge correct or incorrect on whether they retrieved the key information - substance, not word-for-word.
+- If their answer was correct, fast, and clearly confident - no hesitation, no groping: say so warmly and call record_grade with rating "easy". This is the ONE case where you may log without confirming.
+- If correct but anything else - hesitation, a pause, an unsure tone, or you simply aren't confident it was Easy: say so warmly, then turn your guess into a yes/no confirmation question, e.g. "That sounded like a Good - right?" Do not call record_grade yet.
+- If incorrect: say "Not quite - the answer is [answer]." Then confirm before logging, e.g. "I'll mark that Again, ok?" Do not call record_grade yet.
+- Critical: whenever you ask one of those confirmation questions, that ends your turn. Never call record_grade in the same turn as asking it. Wait for the user's reply in a separate turn - confirming, correcting, or naming a different rating - and only then call record_grade with what they settled on.
+- If their reply is unclear, ask again rather than guessing or logging anything.
+- After record_grade, say a brief word confirming what you logged, then move to the next card. Do this even for the last card of the session - always let the user hear how it was rated.
 - Be concise. This is a drill, not a tutoring session.`
 
 const RECORD_GRADE_TOOL = {
@@ -76,6 +82,8 @@ export function VoiceReview() {
   const pendingTranscriptRef = useRef<string | null>(null)
   const cardShownAtRef = useRef(0)
   const gradedCallIdsRef = useRef<Set<string>>(new Set())
+  /** Whether the current card's answer has been handed over yet - see injectCard. */
+  const backInjectedRef = useRef(false)
 
   // Load the queue up front (cheap, no mic) so an empty deck skips straight
   // to the done screen instead of offering to start a session for nothing.
@@ -106,28 +114,44 @@ export function VoiceReview() {
     }
   }, [])
 
-  const injectCard = useCallback((card: Flashcard) => {
-    const session = sessionRef.current
-    if (!session) return
-    cardShownAtRef.current = Date.now()
-    session.send({
+  /** Send a system-role text item into the conversation. */
+  const sendSystemText = useCallback((text: string) => {
+    sessionRef.current?.send({
       type: 'conversation.item.create',
       item: {
         type: 'message',
         role: 'system',
-        content: [
-          {
-            type: 'input_text',
-            text:
-              `New card. cardId: "${card.id}"\n` +
-              `Question (front): ${card.front}\n` +
-              `Answer (back, for your judgement only): ${card.back}`,
-          },
-        ],
+        content: [{ type: 'input_text', text }],
       },
     })
-    session.send({ type: 'response.create' })
   }, [])
+
+  /**
+   * Start a card by injecting ONLY the front (DESIGN.md section 4.2).
+   *
+   * The back is deliberately withheld until the user has actually spoken. With
+   * both halves in context at question time, the model treated the answer
+   * sitting there as though the user had already given it - skipping the
+   * question entirely and grading it Easy on the spot. That is the answer-leak
+   * failure DESIGN.md predicted prompting alone would not fix, and this is the
+   * structural fix it prescribed: the model cannot leak, or grade against, an
+   * answer it has not been given yet.
+   */
+  const injectCard = useCallback(
+    (card: Flashcard) => {
+      if (!sessionRef.current) return
+      cardShownAtRef.current = Date.now()
+      backInjectedRef.current = false
+      sendSystemText(
+        `New card. cardId: "${card.id}"\n` +
+          `Question (front): ${card.front}\n` +
+          `Ask this question now. You have NOT been given the answer yet - it ` +
+          `arrives only after the user speaks.`,
+      )
+      sessionRef.current.send({ type: 'response.create' })
+    },
+    [sendSystemText],
+  )
 
   /**
    * End the session and show the done screen.
@@ -159,6 +183,17 @@ export function VoiceReview() {
     [uid],
   )
 
+  /**
+   * Drop the finished card's messages (DESIGN.md section 4.2 - the Realtime API
+   * resubmits full context every turn, so an unmanaged session grows
+   * super-linearly in cost).
+   *
+   * Only `message` items are deleted. Deleting the model's `function_call` item
+   * right after submitting a `function_call_output` that references its call_id
+   * left the conversation with a dangling reference, and the model would stall
+   * and mumble instead of moving on. Function-call items are small; leaving
+   * them costs far less than corrupting the turn.
+   */
   const clearHistory = useCallback(() => {
     const session = sessionRef.current
     if (!session) return
@@ -241,7 +276,10 @@ export function VoiceReview() {
     (event: any) => {
       switch (event.type) {
         case 'conversation.item.created':
-          if (event.item?.id) itemIdsRef.current.push(event.item.id)
+          // Only messages are ever deleted between cards - see clearHistory.
+          if (event.item?.id && event.item?.type === 'message') {
+            itemIdsRef.current.push(event.item.id)
+          }
           break
         case 'conversation.item.input_audio_transcription.completed':
           pendingTranscriptRef.current = event.transcript ?? null
@@ -249,7 +287,24 @@ export function VoiceReview() {
         case 'input_audio_buffer.speech_started':
           setVoiceState('listening')
           break
-        case 'input_audio_buffer.speech_stopped':
+        case 'input_audio_buffer.speech_stopped': {
+          setVoiceState('thinking')
+          // The user has now actually answered, so it is safe to hand over the
+          // back. Turn detection runs with create_response false precisely so
+          // this lands BEFORE the model is asked to respond - otherwise server
+          // VAD would start grading the moment speech stopped, racing the
+          // injection it needs to grade against.
+          const card = queueRef.current[0]
+          if (card && !backInjectedRef.current) {
+            backInjectedRef.current = true
+            sendSystemText(
+              `The user has now answered. The correct answer (back) is: ${card.back}\n` +
+                `Judge their spoken answer against it, then follow the rating rules.`,
+            )
+          }
+          sessionRef.current?.send({ type: 'response.create' })
+          break
+        }
         case 'response.created':
           setVoiceState('thinking')
           break
@@ -264,6 +319,9 @@ export function VoiceReview() {
           break
         }
         case 'error':
+          // Logged in full as well: the surfaced message is often generic, and
+          // a broken session is very hard to diagnose from the UI alone.
+          console.error('realtime error', event)
           setError(event.error?.message ?? 'Realtime error')
           break
         default:
@@ -272,7 +330,7 @@ export function VoiceReview() {
           }
       }
     },
-    [handleRecordGrade],
+    [handleRecordGrade, sendSystemText],
   )
 
   // Starting requires a direct tap: iOS only grants microphone access inside
@@ -291,7 +349,14 @@ export function VoiceReview() {
           type: 'realtime',
           instructions: SYSTEM_PROMPT,
           tools: [RECORD_GRADE_TOOL],
-          audio: { input: { turn_detection: { type: 'server_vad' } } },
+          audio: {
+            input: {
+              // create_response false: we drive response.create ourselves from
+              // speech_stopped, so the card's answer is always injected before
+              // the model is asked to grade against it (see handleEvent).
+              turn_detection: { type: 'server_vad', create_response: false },
+            },
+          },
         },
       })
 
