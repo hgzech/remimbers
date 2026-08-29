@@ -8,6 +8,7 @@ import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { createEmptyCard } from 'ts-fsrs'
 import { generateCards } from './generate.js'
 import { transcribeAudio } from './transcribe.js'
+import { mintRealtimeToken } from './realtime.js'
 
 const app = initializeApp()
 
@@ -274,4 +275,37 @@ export const transcribe = onRequest(
   },
 )
 
-// Phase 4 adds: realtimeToken (mint ephemeral client secret, with a daily cap)
+/**
+ * Mint an ephemeral Realtime API token for Phase 4 voice review.
+ *
+ * The real OpenAI key never reaches the browser - this hands back a client
+ * secret, scoped to one session and expiring in minutes, that the browser
+ * uses to open a WebRTC session directly with OpenAI (DESIGN.md section 4.2).
+ *
+ * TODO(cost cap): before inviting anyone beyond Hilmar, enforce a per-user
+ * daily cap on minted tokens here, checked against a Firestore counter - this
+ * endpoint is the door to all realtime spend and the right chokepoint
+ * (DESIGN.md section 7).
+ */
+export const realtimeToken = onRequest(
+  { ...opts, secrets: [openaiKey] },
+  async (req, res) => {
+    let uid: string
+    try {
+      uid = (await requireUser(req.headers.authorization)).uid
+    } catch {
+      res.status(401).json({ ok: false, error: 'unauthenticated' })
+      return
+    }
+
+    try {
+      const token = await mintRealtimeToken(openaiKey.value())
+      logger.info('realtime token minted', { uid })
+      res.json({ token })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      logger.error('realtime token mint failed', { uid, message })
+      res.status(502).json({ ok: false, error: message })
+    }
+  },
+)

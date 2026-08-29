@@ -17,8 +17,34 @@ import {
   scheduler,
 } from '../lib/fsrs'
 import { toFsrsCard, type Flashcard, type Note } from '../lib/types'
+import { VoiceReview } from './VoiceReview'
 
 export function Review() {
+  const [voice, setVoice] = useState(false)
+
+  return (
+    <div className="review-shell">
+      <div className="review-mode-toggle">
+        <button
+          className={`review-mode-btn ${voice ? '' : 'active'}`}
+          onClick={() => setVoice(false)}
+        >
+          Text
+        </button>
+        <button
+          className={`review-mode-btn ${voice ? 'active' : ''}`}
+          onClick={() => setVoice(true)}
+        >
+          Voice review
+        </button>
+      </div>
+      {voice ? <VoiceReview /> : <TextReview />}
+    </div>
+  )
+}
+
+/** The original button-and-reveal review, kept fully intact as the fallback (DESIGN.md section 4.4). */
+function TextReview() {
   const { user } = useAuth()
   const uid = user?.uid
 
@@ -395,7 +421,7 @@ function CardEditor({
   )
 }
 
-function DoneScreen({
+export function DoneScreen({
   reviewed,
   nextDue,
   error,
