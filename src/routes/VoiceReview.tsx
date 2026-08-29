@@ -25,7 +25,7 @@ import { DoneScreen } from './Review'
  * to volunteer the answer during the few seconds the user is answering.
  */
 const SYSTEM_PROMPT = `You are a spaced-repetition tutor helping the user review flashcards.
-You have access to the card's question and answer.
+Cards are fed to you one at a time, in two halves - never both at once.
 
 How a card runs:
 1. You are given a card's question (front) only. Read it aloud, naturally, and then STOP. Do not grade, do not guess at an answer, do not call any tool - you have not heard the user yet and you do not have the correct answer at this point.
