@@ -23,6 +23,16 @@ import { DoneScreen } from './Review'
  * session glitchy. This keeps the structural guarantee and the standard
  * auto-response flow; the prompt covers the smaller remaining ask, which is not
  * to volunteer the answer during the few seconds the user is answering.
+ *
+ * On rating, the prompt is back to DESIGN.md section 4.3 exactly: the model
+ * calls the binary (retrieved it or not), the user calls the difficulty, every
+ * time. An earlier cut let the model skip the ask and log Easy by itself when
+ * an answer sounded fast and confident. Its intuitions were not good enough,
+ * and section 4.3 gives the reason they were never going to be - a listener
+ * genuinely cannot tell "instant" from "dragged it up after four seconds of
+ * straining", which is precisely what the rating is meant to encode. It does
+ * not propose a rating either: a guess offered aloud anchors the answer it is
+ * supposed to be eliciting.
  */
 const SYSTEM_PROMPT = `You are a spaced-repetition tutor helping the user review flashcards.
 Cards are fed to you one at a time, in two halves - never both at once.
@@ -30,28 +40,55 @@ Cards are fed to you one at a time, in two halves - never both at once.
 How a card runs:
 1. You are given a card's question (front) only. Read it aloud, naturally, and then STOP. Do not grade, do not guess at an answer, do not call any tool - you have not heard the user yet and you do not have the correct answer at this point.
 2. You are then handed the correct answer (back) in a system message. Say nothing when it arrives - it is for your judgement only. Never read it out or hint at it before the user has answered.
-3. The user speaks their answer. Now judge it against the correct answer.
+3. The user speaks their answer.
+4. You judge whether it was correct, then ask them for a rating, then STOP and wait.
+5. Only after they have spoken a rating do you call record_grade.
 
-Judging and rating:
-- Judge correct or incorrect on whether they retrieved the key information - substance, not word-for-word.
-- If their answer was correct, fast, and clearly confident - no hesitation, no groping: say so warmly and call record_grade with rating "easy". This is the ONE case where you may log without confirming.
-- If correct but anything else - hesitation, a pause, an unsure tone, or you simply aren't confident it was Easy: say so warmly, then turn your guess into a yes/no confirmation question, e.g. "That sounded like a Good - right?" Do not call record_grade yet.
-- If incorrect: say "Not quite - the answer is [answer]." Then confirm before logging, e.g. "I'll mark that Again, ok?" Do not call record_grade yet.
-- Critical: whenever you ask one of those confirmation questions, that ends your turn. Never call record_grade in the same turn as asking it. Wait for the user's reply in a separate turn - confirming, correcting, or naming a different rating - and only then call record_grade with what they settled on.
-- If their reply is unclear, ask again rather than guessing or logging anything.
-- After record_grade, say a brief word confirming what you logged, then move to the next card. Do this even for the last card of the session - always let the user hear how it was rated.
-- Be concise. This is a drill, not a tutoring session.`
+The division of labour - this is the most important rule here:
+- You decide ONE thing: did they retrieve the key information, or not? Judge on substance, not word-for-word wording.
+- You NEVER decide the difficulty rating. Do not infer it from how fast, fluent or confident they sounded. Do not announce a rating. Do not assume one because the answer seemed obviously easy or obviously painful. How hard retrieval felt is something only the user knows, and it is theirs to say, out loud, on every single card without exception.
+- There is no case - none - in which you may log a rating the user did not say.
+
+If they were correct:
+- Say so, warmly and briefly.
+- Then ask: "Hard, Good, or Easy?"
+- That ends your turn. Stop talking and wait for their reply.
+
+If they were incorrect:
+- Say "Not quite - the answer is [answer]."
+- Then ask: "Mark that Again?"
+- That ends your turn. Stop talking and wait for their reply.
+
+Calling record_grade:
+- NEVER call record_grade in the same turn in which you asked for the rating. Asking is the end of that turn.
+- Call it only in a LATER turn, after the user has actually replied with a rating.
+- Log exactly what they said. They say Good, you log "good". They say Again, you log "again". Never round their answer toward what you would have picked.
+- If their reply does not name a rating, or is unclear, or is about something else entirely: ask again. Do not guess, and do not log anything.
+- judgedCorrect is your call; rating is theirs. They are independent, and they are allowed to disagree - a user may rate a correct answer Again, or a wrong one Easy. Record both faithfully as given.
+
+After record_grade:
+- Say one brief line confirming what you logged, e.g. "Logged as Good."
+- Then move straight on to the next card. Do this even for the last card of the session - always let the user hear how it was rated before you finish.
+- Be concise throughout. This is a drill, not a tutoring session.`
 
 const RECORD_GRADE_TOOL = {
   type: 'function',
   name: 'record_grade',
   description:
-    "Record the outcome of the current flashcard once you've judged correctness and a difficulty rating has been determined.",
+    'Record the outcome of the current flashcard. Call this ONLY after the user has ' +
+    'spoken a difficulty rating in an earlier turn - never in the same turn you asked ' +
+    'for it, and never with a rating you inferred yourself.',
   parameters: {
     type: 'object',
     properties: {
       cardId: { type: 'string', description: 'The cardId given to you when this card was presented.' },
-      rating: { type: 'string', enum: ['again', 'hard', 'good', 'easy'] },
+      rating: {
+        type: 'string',
+        enum: ['again', 'hard', 'good', 'easy'],
+        description:
+          'The rating the USER said out loud. Never your own inference, and never a ' +
+          'rating they did not state.',
+      },
       judgedCorrect: { type: 'boolean', description: 'Whether the user retrieved the key information.' },
       rationale: { type: 'string', description: 'One short sentence on what they got right or missed.' },
     },
@@ -227,10 +264,32 @@ export function VoiceReview() {
       try {
         args = JSON.parse(item.arguments ?? '{}')
       } catch {
-        // Fall through with an empty args object - rating defaults to Good below.
+        // Fall through with an empty args object - handled by the guard below.
       }
 
-      const rating = RATING_BY_NAME[args.rating] ?? Rating.Good
+      // No usable rating means the user never actually gave one, so there is
+      // nothing legitimate to log. Defaulting (this used to fall back to Good)
+      // would quietly write a rating they never said, which is the one thing
+      // the prompt promises never happens. Hand it back and let the model ask.
+      const rating = RATING_BY_NAME[String(args.rating ?? '').toLowerCase()]
+      if (!rating) {
+        sessionRef.current?.send({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: item.call_id,
+            output: JSON.stringify({
+              ok: false,
+              error:
+                'No valid rating. Nothing was logged. Ask the user for a rating ' +
+                '(Again, Hard, Good or Easy), wait for their spoken reply, then ' +
+                'call record_grade again with what they said.',
+            }),
+          },
+        })
+        sessionRef.current?.send({ type: 'response.create' })
+        return
+      }
       const now = new Date()
 
       const { next, committed } = gradeCard(
