@@ -13,17 +13,24 @@ import { DoneScreen } from './Review'
  * The first cut injected front and back together and relied on this prompt not
  * to leak the answer. It did not hold: with the answer already in context the
  * model treated it as though the user had answered, skipped the question, and
- * graded on the spot. So the structural fix from DESIGN.md section 4.2 is in
- * place - front at question time, back only once the user has spoken - and the
- * prompt below describes that sequence rather than trying to police it.
+ * graded on the spot.
+ *
+ * So the answer is withheld at question time, per DESIGN.md section 4.2. It is
+ * handed over once the model has actually asked the question - which is the
+ * point the skip-the-question failure becomes impossible - rather than once the
+ * user has finished speaking as section 4.2 suggests. Waiting for the user
+ * meant driving every model response by hand off a VAD event, and that made the
+ * session glitchy. This keeps the structural guarantee and the standard
+ * auto-response flow; the prompt covers the smaller remaining ask, which is not
+ * to volunteer the answer during the few seconds the user is answering.
  */
 const SYSTEM_PROMPT = `You are a spaced-repetition tutor helping the user review flashcards.
 You have access to the card's question and answer.
 
 How a card runs:
-1. You are given a card's question (front) only. Read it aloud, naturally, and then STOP. Do not grade, do not guess at an answer, do not call any tool - you have not heard the user yet and you do not even have the correct answer at this point.
-2. The user speaks their answer.
-3. Only then are you given the correct answer (back), in a system message. Now judge their spoken answer against it.
+1. You are given a card's question (front) only. Read it aloud, naturally, and then STOP. Do not grade, do not guess at an answer, do not call any tool - you have not heard the user yet and you do not have the correct answer at this point.
+2. You are then handed the correct answer (back) in a system message. Say nothing when it arrives - it is for your judgement only. Never read it out or hint at it before the user has answered.
+3. The user speaks their answer. Now judge it against the correct answer.
 
 Judging and rating:
 - Judge correct or incorrect on whether they retrieved the key information - substance, not word-for-word.
@@ -129,13 +136,11 @@ export function VoiceReview() {
   /**
    * Start a card by injecting ONLY the front (DESIGN.md section 4.2).
    *
-   * The back is deliberately withheld until the user has actually spoken. With
-   * both halves in context at question time, the model treated the answer
+   * With both halves in context at question time, the model treated the answer
    * sitting there as though the user had already given it - skipping the
-   * question entirely and grading it Easy on the spot. That is the answer-leak
-   * failure DESIGN.md predicted prompting alone would not fix, and this is the
-   * structural fix it prescribed: the model cannot leak, or grade against, an
-   * answer it has not been given yet.
+   * question entirely and grading it Easy on the spot. Withholding the back
+   * until the question has actually been asked makes that impossible rather
+   * than merely discouraged; the answer follows on response.done.
    */
   const injectCard = useCallback(
     (card: Flashcard) => {
@@ -146,7 +151,7 @@ export function VoiceReview() {
         `New card. cardId: "${card.id}"\n` +
           `Question (front): ${card.front}\n` +
           `Ask this question now. You have NOT been given the answer yet - it ` +
-          `arrives only after the user speaks.`,
+          `follows once you have asked.`,
       )
       sessionRef.current.send({ type: 'response.create' })
     },
@@ -287,34 +292,37 @@ export function VoiceReview() {
         case 'input_audio_buffer.speech_started':
           setVoiceState('listening')
           break
-        case 'input_audio_buffer.speech_stopped': {
-          setVoiceState('thinking')
-          // The user has now actually answered, so it is safe to hand over the
-          // back. Turn detection runs with create_response false precisely so
-          // this lands BEFORE the model is asked to respond - otherwise server
-          // VAD would start grading the moment speech stopped, racing the
-          // injection it needs to grade against.
-          const card = queueRef.current[0]
-          if (card && !backInjectedRef.current) {
-            backInjectedRef.current = true
-            sendSystemText(
-              `The user has now answered. The correct answer (back) is: ${card.back}\n` +
-                `Judge their spoken answer against it, then follow the rating rules.`,
-            )
-          }
-          sessionRef.current?.send({ type: 'response.create' })
-          break
-        }
+        case 'input_audio_buffer.speech_stopped':
         case 'response.created':
           setVoiceState('thinking')
           break
         case 'response.done': {
           setVoiceState('listening')
           const output = event.response?.output ?? []
+          let graded = false
           for (const item of output) {
             if (item?.type === 'function_call' && item?.name === 'record_grade') {
               handleRecordGrade(item)
+              graded = true
             }
+          }
+          // The model has just finished reading the question, so hand over the
+          // answer now - it can no longer skip asking. Deliberately keyed off
+          // response.done rather than a VAD event: turn detection fires
+          // unevenly, and hanging the answer injection (and with it every
+          // model response) off speech_stopped made the session feel glitchy.
+          //
+          // Skipped when this turn recorded a grade: handleRecordGrade has
+          // already advanced to the next card and re-armed the flag, and that
+          // card's question has not been read yet.
+          const card = queueRef.current[0]
+          if (!graded && card && !backInjectedRef.current) {
+            backInjectedRef.current = true
+            sendSystemText(
+              `The correct answer (back) for the card you just asked is: ${card.back}\n` +
+                `Keep it to yourself until the user has answered, then judge their ` +
+                `spoken answer against it and follow the rating rules.`,
+            )
           }
           break
         }
@@ -349,14 +357,11 @@ export function VoiceReview() {
           type: 'realtime',
           instructions: SYSTEM_PROMPT,
           tools: [RECORD_GRADE_TOOL],
-          audio: {
-            input: {
-              // create_response false: we drive response.create ourselves from
-              // speech_stopped, so the card's answer is always injected before
-              // the model is asked to grade against it (see handleEvent).
-              turn_detection: { type: 'server_vad', create_response: false },
-            },
-          },
+          // Plain server VAD, auto-responding. Driving response.create by hand
+          // off speech_stopped made every model reply hostage to a VAD event
+          // firing cleanly, which it did not - the answer injection now hangs
+          // off response.done instead (see handleEvent).
+          audio: { input: { turn_detection: { type: 'server_vad' } } },
         },
       })
 
