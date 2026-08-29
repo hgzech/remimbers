@@ -14,6 +14,9 @@ const CLIENT_SECRETS_URL = 'https://api.openai.com/v1/realtime/client_secrets'
  */
 export const REALTIME_MODEL = 'gpt-realtime-2.1'
 
+/** OpenAI recommends `marin` or `cedar` for quality; Hilmar's pick. */
+export const REALTIME_VOICE = 'marin'
+
 /**
  * Mint a short-lived client secret scoped to one Realtime session.
  *
@@ -32,6 +35,7 @@ export async function mintRealtimeToken(apiKey: string): Promise<string> {
       session: {
         type: 'realtime',
         model: REALTIME_MODEL,
+        audio: { output: { voice: REALTIME_VOICE } },
       },
     }),
   })
