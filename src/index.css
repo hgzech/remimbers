@@ -171,116 +171,108 @@ body {
 
 /* ---------- capture ---------- */
 
+/*
+ * Voice-first: the mic dominates the screen, centered in the thumb-reach
+ * zone. Text entry is a deliberately smaller fallback beneath it, not a
+ * second primary action - so it neither autofocuses nor competes for space.
+ */
 .capture {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 16px;
-  gap: 12px;
+  padding: 24px 16px 16px;
 }
 
-.capture-input {
+.capture-voice {
   flex: 1;
-  resize: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  /* 16px minimum, or iOS Safari zooms the viewport on focus. */
-  font-size: 18px;
-  line-height: 1.55;
-}
-.capture-input::placeholder { color: var(--text-dim); }
-
-/*
- * The thumb-reach zone: one primary action, anchored at the bottom of the
- * screen rather than floating wherever the content happens to end. The flash
- * sits above the button so it never shifts the button's position.
- */
-.capture-bar {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding-bottom: env(safe-area-inset-bottom);
+  justify-content: center;
+  gap: 14px;
+  min-height: 0;
 }
 
-.flash {
-  font-size: 13px;
-  color: var(--accent);
-  opacity: 0;
-  transition: opacity 0.25s;
-}
-.flash.on { opacity: 1; }
-
-.capture-cta {
-  width: 100%;
-  min-height: 60px;
-  font-size: 16px;
-}
-
-.record-btn {
+.mic-btn {
+  width: 132px;
+  height: 132px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  font: inherit;
-  font-weight: 500;
-  padding: 18px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-2);
   color: var(--text);
   cursor: pointer;
-  /* Press-and-hold, not tap: a long press must not select text, show iOS's
-     callout menu, or let the page scroll while the finger stays down. */
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
-.record-btn.recording {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--surface-2);
-}
-.record-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-.record-btn.recording .record-dot {
+.mic-btn svg { width: 52px; height: 52px; }
+.mic-btn:disabled { opacity: 0.5; cursor: default; }
+
+.mic-btn.recording {
   background: #f2777a;
-  animation: pulse 1.1s ease-in-out infinite;
+  color: #fff;
+  animation: mic-pulse 1.4s ease-out infinite;
 }
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.3); }
+@keyframes mic-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(242, 119, 122, 0.45); }
+  70% { box-shadow: 0 0 0 24px rgba(242, 119, 122, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(242, 119, 122, 0); }
 }
 
-.queue-list {
-  list-style: none;
+.capture-status {
   margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.queue-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: var(--surface);
+  min-height: 1.4em;
   font-size: 13px;
   color: var(--text-dim);
+  text-align: center;
 }
-.queue-error { color: #f2777a; font-size: 13px; margin: 0; }
+.capture-status.error { color: #f2777a; }
+
+.capture-retry {
+  margin: -6px 0 0;
+}
+
+.capture-text {
+  flex-shrink: 0;
+  padding-top: 14px;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.capture-text-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.capture-text-input {
+  display: block;
+  width: 100%;
+  resize: none;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  /* 16px minimum, or iOS Safari zooms the viewport on focus. */
+  font-size: 16px;
+  line-height: 1.4;
+  padding: 10px 12px;
+}
+.capture-text-input::placeholder { color: var(--text-dim); }
+.capture-text-input:focus { border-color: var(--accent); }
+
+.capture-text-save {
+  width: 100%;
+  margin-top: 10px;
+}
 
 /* ---------- library ---------- */
 
