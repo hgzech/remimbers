@@ -161,18 +161,20 @@ export function VoiceReview() {
   /**
    * End the session and show the done screen.
    *
-   * Not immediate by default: the model speaks its grade confirmation in the
-   * same turn as the record_grade call, and that audio is still draining out
-   * of the browser's playout buffer the instant the tool call event arrives.
-   * Closing the peer connection right then cuts the sentence off mid-word -
-   * which is exactly what happened to the last card of a session, since nothing
-   * comes after it to buy the trailing audio more time. A manual "End session"
-   * tap means the user wants out now, so that path skips the grace period.
+   * Not immediate by default: the caller has just asked the model to speak a
+   * closing confirmation, and tearing the connection down before that audio
+   * has played cuts it off mid-word. waitForAudioIdle watches the remote
+   * track's actual level, which is the only honest signal here - `response.done`
+   * only means the server finished generating, and WebRTC still has to play
+   * the audio out in real time after that.
+   *
+   * A manual "End session" tap means the user wants out now, so that path
+   * skips the wait.
    */
   const finish = useCallback(
     async (opts?: { immediate?: boolean }) => {
       if (!opts?.immediate) {
-        await new Promise((resolve) => setTimeout(resolve, 2500))
+        await sessionRef.current?.waitForAudioIdle()
       }
       sessionRef.current?.close()
       sessionRef.current = null
@@ -271,6 +273,11 @@ export function VoiceReview() {
       if (nextQueue.length > 0) {
         injectCard(nextQueue[0])
       } else {
+        // Last card: ask for the closing confirmation explicitly. Every other
+        // card gets one for free because injectCard sends a response.create
+        // for the next question - with no next card, nothing would prompt the
+        // model to speak and the session just went silent.
+        sessionRef.current?.send({ type: 'response.create' })
         void finish()
       }
     },
