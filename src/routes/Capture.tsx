@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { addNote } from '../lib/notes'
 import { transcribeAudio } from '../lib/functions'
@@ -30,6 +31,10 @@ export function Capture() {
   const areaRef = useRef<HTMLTextAreaElement>(null)
   const chunksRef = useRef<Blob[]>([])
   const recorderRef = useRef<MediaRecorder | null>(null)
+  // Tracks whether the button is still held. startRecording is async
+  // (getUserMedia + setup), so a hold shorter than that would otherwise
+  // arm a recording after the finger has already lifted.
+  const heldRef = useRef(false)
 
   // Crash insurance (DESIGN.md section 5.1): anything still in IndexedDB from
   // a previous session - a dropped signal, a killed tab mid-upload - retries
@@ -71,10 +76,20 @@ export function Capture() {
   }
 
   async function startRecording() {
+    heldRef.current = true
     setMicError(null)
     try {
       const mimeType = pickMimeType()
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+      // The button was released before permission/setup finished - the user
+      // never meant to record anything, so don't arm anything and hand the
+      // mic straight back.
+      if (!heldRef.current) {
+        stream.getTracks().forEach((t) => t.stop())
+        return
+      }
+
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
       chunksRef.current = []
 
@@ -98,7 +113,10 @@ export function Capture() {
   }
 
   function stopRecording() {
-    recorderRef.current?.stop()
+    heldRef.current = false
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop()
+    }
     setRecording(false)
   }
 
@@ -111,9 +129,15 @@ export function Capture() {
     await processItem({ id, blob, mimeType })
   }
 
-  function toggleRecording() {
-    if (recording) stopRecording()
-    else void startRecording()
+  // Pointer capture, not click: a press-and-hold control needs the down/up
+  // pair to fire on this element even if the finger drifts off it mid-hold,
+  // or release would never come and the mic would stay armed.
+  function onRecordPointerDown(e: PointerEvent<HTMLButtonElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    void startRecording()
+  }
+  function onRecordPointerUp() {
+    stopRecording()
   }
 
   function save() {
@@ -132,15 +156,18 @@ export function Capture() {
 
   return (
     <div className="capture">
-      <button
-        type="button"
-        className={`record-btn ${recording ? 'recording' : ''}`}
-        onClick={toggleRecording}
-        aria-pressed={recording}
-      >
-        <span className="record-dot" />
-        {recording ? 'Tap to stop' : 'Tap to speak'}
-      </button>
+      <textarea
+        ref={areaRef}
+        className="capture-input"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Say what you just learned, or type it here."
+        autoFocus
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save()
+        }}
+      />
+
       {micError && <p className="queue-error">{micError}</p>}
 
       {queue.length > 0 && (
@@ -162,32 +189,28 @@ export function Capture() {
         </ul>
       )}
 
-      <textarea
-        ref={areaRef}
-        className="capture-input"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Or type it. Cards get written for you either way."
-        autoFocus
-        // On iOS, tapping this and hitting the keyboard's mic key gives you
-        // system dictation too - a second way in, not the only one anymore.
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') save()
-        }}
-      />
-
-      <div className="capture-actions">
+      {/* Bottom, thumb-reach zone: exactly one primary action at a time. */}
+      <div className="capture-bar">
         <span className={`flash ${flash ? 'on' : ''}`}>Captured</span>
-        <button className="btn btn-primary" onClick={save} disabled={!text.trim()}>
-          Capture
-        </button>
+        {text.trim() ? (
+          <button className="btn btn-primary capture-cta" onClick={save}>
+            Capture
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`record-btn capture-cta ${recording ? 'recording' : ''}`}
+            onPointerDown={onRecordPointerDown}
+            onPointerUp={onRecordPointerUp}
+            onPointerCancel={onRecordPointerUp}
+            onContextMenu={(e) => e.preventDefault()}
+            aria-label={recording ? 'Recording - release to send' : 'Hold to record a voice note'}
+          >
+            <span className="record-dot" />
+            {recording ? 'Release to send' : 'Hold to speak'}
+          </button>
+        )}
       </div>
-
-      <p className="hint">
-        One field on purpose &mdash; you&rsquo;re dumping a thought, not
-        authoring a flashcard. Splitting it into question and answer is the
-        LLM&rsquo;s job.
-      </p>
     </div>
   )
 }

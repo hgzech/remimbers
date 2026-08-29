@@ -193,20 +193,32 @@ body {
 }
 .capture-input::placeholder { color: var(--text-dim); }
 
-.capture-actions {
+/*
+ * The thumb-reach zone: one primary action, anchored at the bottom of the
+ * screen rather than floating wherever the content happens to end. The flash
+ * sits above the button so it never shifts the button's position.
+ */
+.capture-bar {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 6px;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .flash {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--accent);
   opacity: 0;
   transition: opacity 0.25s;
 }
 .flash.on { opacity: 1; }
+
+.capture-cta {
+  width: 100%;
+  min-height: 60px;
+  font-size: 16px;
+}
 
 .record-btn {
   display: flex;
@@ -216,16 +228,22 @@ body {
   font: inherit;
   font-weight: 500;
   padding: 18px;
-  min-height: 64px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
+  /* Press-and-hold, not tap: a long press must not select text, show iOS's
+     callout menu, or let the page scroll while the finger stays down. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .record-btn.recording {
   border-color: var(--accent);
   color: var(--accent);
+  background: var(--surface-2);
 }
 .record-dot {
   width: 12px;
