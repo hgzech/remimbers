@@ -21,11 +21,12 @@ Rules:
 - Read the question naturally. Wait for the user to answer.
 - Never reveal the answer before the user responds.
 - After they answer, judge correct or incorrect based on whether they retrieved the key information (not word-for-word, but the substance).
-- If correct: say so warmly, then infer a difficulty from their delivery (confidence, hesitation, speed) and turn it into a yes/no confirmation question - e.g. "That sounded like an Easy - sound right?" Do not just announce the rating as a fact.
-- If incorrect: say "Not quite - the answer is [answer]." Then ask how they'd like to rate it: Hard, Good, or Easy is not relevant here - confirm "Again", e.g. "I'll mark that Again, ok?"
-- Critical: never call record_grade in the same turn as asking the confirmation question above. Ask, then stop and wait for the user's actual reply in a separate turn. Only after they reply - confirming, correcting, or naming a different rating - do you call record_grade with the value they settled on.
+- If correct, fast, and clearly confident - no hesitation, no groping for the answer: say so warmly and call record_grade right away with rating "easy". This is the one case where you don't need to confirm - a clean, instant, correct answer earns Easy without a check-in.
+- If correct but anything else - any hesitation, a pause before answering, an unsure tone, or you simply aren't confident it was Easy: say so warmly, then turn your guess into a yes/no confirmation question - e.g. "That sounded like a Good - right?" Do not announce the rating as settled fact, and do not call record_grade yet.
+- If incorrect: say "Not quite - the answer is [answer]." Then confirm before logging - e.g. "I'll mark that Again, ok?" Do not call record_grade yet.
+- Critical: whenever you ask one of the confirmation questions above, that is the end of your turn. Never call record_grade in the same turn as asking it. Wait for the user's actual reply in a separate turn - confirming, correcting, or naming a different rating - and only then call record_grade with the value they settled on.
 - If their reply is unclear or doesn't answer the question, ask again rather than guessing or logging anything.
-- After record_grade is called, immediately move to the next card.
+- After record_grade is called, say a brief word confirming what you logged, then immediately move to the next card. Do this even for the very last card of the session - always let the user hear how it was rated before the session ends.
 - Be concise. This is a drill, not a tutoring session.`
 
 const RECORD_GRADE_TOOL = {
@@ -128,18 +129,35 @@ export function VoiceReview() {
     session.send({ type: 'response.create' })
   }, [])
 
-  const finish = useCallback(async () => {
-    sessionRef.current?.close()
-    sessionRef.current = null
-    if (uid) {
-      try {
-        setNextDue(await fetchNextDue(uid, new Date()))
-      } catch {
-        // Nothing worth surfacing - the done screen just won't show a next-due hint.
+  /**
+   * End the session and show the done screen.
+   *
+   * Not immediate by default: the model speaks its grade confirmation in the
+   * same turn as the record_grade call, and that audio is still draining out
+   * of the browser's playout buffer the instant the tool call event arrives.
+   * Closing the peer connection right then cuts the sentence off mid-word -
+   * which is exactly what happened to the last card of a session, since nothing
+   * comes after it to buy the trailing audio more time. A manual "End session"
+   * tap means the user wants out now, so that path skips the grace period.
+   */
+  const finish = useCallback(
+    async (opts?: { immediate?: boolean }) => {
+      if (!opts?.immediate) {
+        await new Promise((resolve) => setTimeout(resolve, 2500))
       }
-    }
-    setPhase('done')
-  }, [uid])
+      sessionRef.current?.close()
+      sessionRef.current = null
+      if (uid) {
+        try {
+          setNextDue(await fetchNextDue(uid, new Date()))
+        } catch {
+          // Nothing worth surfacing - the done screen just won't show a next-due hint.
+        }
+      }
+      setPhase('done')
+    },
+    [uid],
+  )
 
   const clearHistory = useCallback(() => {
     const session = sessionRef.current
@@ -296,7 +314,7 @@ export function VoiceReview() {
   }, [])
 
   const endSession = useCallback(() => {
-    void finish()
+    void finish({ immediate: true })
   }, [finish])
 
   if (!uid || phase === 'loading') {
