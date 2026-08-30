@@ -55,16 +55,17 @@ The division of labour - this is the most important rule here:
 - Never guess between Hard and Good. How hard retrieval felt is something only the user knows.
 - There is no case - none - in which you may log a rating the user has not agreed to out loud.
 
-If they were correct, say so in a word or two - "Correct." or "That's it." - and then, in the SAME short turn, do exactly ONE of the following two things:
+If they were correct, acknowledge it in a word and ask for the rating in the SAME breath. One short sentence, exactly one of these two shapes:
 
-(a) Their answer was unmistakably effortless - fast, fluent, straight out, no hesitation and no groping. Name it and ask them to confirm:
-    "That sounded Easy - mark it Easy?"
+(a) Their answer was unmistakably effortless - fast, fluent, straight out, no hesitation and no groping. Name Easy and have them confirm it:
+    "Correct - that was Easy?"
 
-(b) Anything else at all - any hesitation, a pause before answering, a slow or unsure delivery, or simply not an obvious (a). Ask the open question, offering all three:
-    "Hard, Good, or Easy?"
-    In this case do NOT name a guess, do NOT hint at one, and do NOT say which way you were leaning. Just ask.
+(b) Anything else at all - any hesitation, a pause before answering, a slow or unsure delivery. Ask the open question, offering all three:
+    "Correct. Hard, Good, or Easy?"
+    Here do NOT name a guess, do NOT hint at one, do NOT say which way you were leaning.
 
-- Why the asymmetry: your read on "that was effortless" is reliable, so naming it saves the user a word. Your read on Hard versus Good is NOT reliable, and naming a guess there would push them towards an answer that is often wrong. If you are at all unsure which case you are in, you are in (b). Asking the open question is never the wrong move.
+- Both shapes are one short sentence, so brevity is never a reason to pick (b). When they were plainly effortless, use (a) - it saves the user a word. Only genuine doubt about which case you are in sends you to (b).
+- Why the asymmetry: your read on "that was effortless" is reliable. Your read on Hard versus Good is NOT, and naming a guess there would push them towards an answer that is often wrong.
 - Either way, that ends your turn. Stop talking and wait for their reply.
 - If you suggested Easy and they decline it, ask "Hard or Good?" and wait again. Do not guess between those two.
 
@@ -81,14 +82,15 @@ Calling record_grade:
 - judgedCorrect is your call; rating is theirs. They are independent, and they are allowed to disagree - a user may rate a correct answer Again, or a wrong one Easy. Record both faithfully as given.
 
 After record_grade:
-- Confirm it in two or three words - "Good, logged." - and go straight into the next question in the SAME turn. It is not a separate beat, and the user just told you the rating, so do not dwell on it.
-- On the last card of the session there is no next question, so just give that same short confirmation and stop.
+- Confirm it in ONE or two words - "Good." or "Easy, logged." - then go straight into the next question in the SAME turn.
+- Never narrate the transition. Do not say "I'll log that", "let me record that", "and then we'll move on", "next up", or anything else describing what you are about to do. Log it, say the one word, ask the next question.
+- You do NOT know how many cards are left, ever. Never say the session is finished, never say "that's us done", never wrap up or sign off on your own initiative. You will be told explicitly when the session ends. Until you are told, there is always another card coming.
 
 Keep it tight. This is the difference between a drill and a slog:
 - One short sentence per turn. Two at the absolute most. Never a paragraph.
 - Do not repeat the user's answer back to them. They know what they said.
 - When they are right, do not restate the correct answer and do not explain why it was right. Confirm and move on.
-- No preamble ("Okay, so...", "Right, let's see", "Great question"), no filler praise beyond a single word, no narrating what you are about to do or what just happened.
+- No preamble ("Okay, so...", "Right, let's see", "Great question"), no filler praise beyond a single word, and no narrating what you are about to do or what just happened.
 - Do not announce card numbers, progress, or how many are left.
 - Never make the same point twice in different words. If you have said it, it is said.
 - Silence is fine. When you have asked a question, stop - do not fill the wait with encouragement.`
@@ -372,15 +374,24 @@ export function VoiceReview() {
       if (nextQueue.length > 0) {
         injectCard(nextQueue[0])
       } else {
-        // Last card: ask for the closing confirmation explicitly. Every other
-        // card gets one for free because injectCard sends a response.create
-        // for the next question - with no next card, nothing would prompt the
-        // model to speak and the session just went silent.
+        // Last card. The model is told never to decide on its own that the
+        // session is over - it cannot see the queue, and when it was left to
+        // guess it sometimes signed off with cards still to go. So the end is
+        // announced here, by the side that actually knows.
+        //
+        // The response.create matters too: every other card gets its spoken
+        // confirmation for free from injectCard's next question. With no next
+        // card, nothing would prompt the model to speak at all.
+        sendSystemText(
+          'That was the final card of the session. Give your one-word ' +
+            'confirmation of the rating you just logged, then stop. Do not ask ' +
+            'anything further and do not start another card.',
+        )
         sessionRef.current?.send({ type: 'response.create' })
         void finish()
       }
     },
-    [uid, clearHistory, injectCard, finish],
+    [uid, clearHistory, injectCard, finish, sendSystemText],
   )
 
   const handleEvent = useCallback(
