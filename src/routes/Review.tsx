@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthProvider'
 import { deleteCard, updateCardText } from '../lib/cards'
 import { fetchNote } from '../lib/notes'
 import {
+  fetchAheadCards,
   fetchDueCards,
   fetchNextDue,
   gradeCard,
@@ -168,6 +169,21 @@ function TextReview() {
     showFrom((queue ?? []).slice(1))
   }, [queue, showFrom])
 
+  // Pull forward cards that are not due yet. Clearing `exhausted` matters: it
+  // is what re-arms the run-dry effect, so finishing the early batch checks
+  // for real due cards again rather than dropping straight back to Done.
+  const reviewAhead = useCallback(() => {
+    if (!uid) return
+    void fetchAheadCards(uid, new Date())
+      .then((cards) => {
+        if (cards.length === 0) return
+        setExhausted(false)
+        setNextDue(null)
+        showFrom(cards)
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+  }, [uid, showFrom])
+
   // Keyboard for the desk, taps for the phone. Space reveals, 1-4 rate.
   useEffect(() => {
     if (!card || editing) return
@@ -203,7 +219,14 @@ function TextReview() {
   }
 
   if (!card) {
-    return <DoneScreen reviewed={reviewed} nextDue={nextDue} error={error} />
+    return (
+      <DoneScreen
+        reviewed={reviewed}
+        nextDue={nextDue}
+        error={error}
+        onReviewAhead={reviewAhead}
+      />
+    )
   }
 
   return (
@@ -425,12 +448,20 @@ export function DoneScreen({
   reviewed,
   nextDue,
   error,
+  onReviewAhead,
 }: {
   reviewed: number
   nextDue: Flashcard | null
   error: string | null
+  /**
+   * Anki's "review ahead": pull forward cards that are not due yet. Offered
+   * only once the queue is empty, which is the one moment it is not just a way
+   * to make more work for yourself. Omitted by callers that cannot do it.
+   */
+  onReviewAhead?: () => void
 }) {
   const now = new Date()
+  const [loadingAhead, setLoadingAhead] = useState(false)
 
   return (
     <div className="centered">
@@ -457,6 +488,19 @@ export function DoneScreen({
           </>
         )}
       </p>
+
+      {onReviewAhead && nextDue && (
+        <button
+          className="btn btn-small"
+          disabled={loadingAhead}
+          onClick={() => {
+            setLoadingAhead(true)
+            onReviewAhead()
+          }}
+        >
+          {loadingAhead ? 'Loading…' : 'Review ahead'}
+        </button>
+      )}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Rating, type Grade } from 'ts-fsrs'
 import { useAuth } from '../auth/AuthProvider'
-import { fetchDueCards, fetchNextDue, gradeCard } from '../lib/review'
+import { fetchAheadCards, fetchDueCards, fetchNextDue, gradeCard } from '../lib/review'
 import { SESSION_HORIZON_MS } from '../lib/fsrs'
 import { createRealtimeSession, mintToken, type RealtimeSession } from '../lib/realtime'
 import type { Flashcard } from '../lib/types'
@@ -157,12 +157,26 @@ export function VoiceReview() {
     if (!uid) return
     let cancelled = false
     fetchDueCards(uid, new Date())
-      .then((cards) => {
+      .then(async (cards) => {
         if (cancelled) return
         queueRef.current = cards
         setTotal(cards.length)
         setRemaining(cards.length)
-        setPhase(cards.length > 0 ? 'idle' : 'done')
+        if (cards.length > 0) {
+          setPhase('idle')
+          return
+        }
+        // Nothing due. Fetch the next one anyway - the done screen needs it to
+        // say when the next card lands, and to know there is anything to pull
+        // forward at all. Without it, "review ahead" would be missing in
+        // precisely the case it exists for.
+        try {
+          const soonest = await fetchNextDue(uid, new Date())
+          if (!cancelled) setNextDue(soonest)
+        } catch {
+          // Leaves the done screen without a next-due hint, which is survivable.
+        }
+        if (!cancelled) setPhase('done')
       })
       .catch((e: unknown) => {
         if (cancelled) return
@@ -479,6 +493,32 @@ export function VoiceReview() {
     void finish({ immediate: true })
   }, [finish])
 
+  /**
+   * Pull forward cards that are not due yet, and go back to the idle screen.
+   *
+   * Idle rather than straight into the session: the previous session's peer
+   * connection is closed by now and its ephemeral token is spent, so starting
+   * again has to go through the same deliberate tap - which iOS requires for
+   * mic access anyway.
+   */
+  const reviewAhead = useCallback(() => {
+    if (!uid) return
+    void fetchAheadCards(uid, new Date())
+      .then((cards) => {
+        if (cards.length === 0) return
+        queueRef.current = cards
+        gradedCallIdsRef.current = new Set()
+        setTotal(cards.length)
+        setRemaining(cards.length)
+        setReviewed(0)
+        setNextDue(null)
+        setError(null)
+        setMuted(false)
+        setPhase('idle')
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+  }, [uid])
+
   if (!uid || phase === 'loading') {
     return (
       <div className="centered">
@@ -488,7 +528,14 @@ export function VoiceReview() {
   }
 
   if (phase === 'done') {
-    return <DoneScreen reviewed={reviewed} nextDue={nextDue} error={error} />
+    return (
+      <DoneScreen
+        reviewed={reviewed}
+        nextDue={nextDue}
+        error={error}
+        onReviewAhead={reviewAhead}
+      />
+    )
   }
 
   if (phase === 'idle') {

@@ -83,6 +83,34 @@ export function subscribeToDueCount(
   )
 }
 
+/**
+ * Cards that are NOT yet due, soonest first - Anki's "review ahead".
+ *
+ * Same predicate as fetchNextDue, just more of them, so it rides the composite
+ * index that query already needs. Nothing about grading changes: FSRS derives
+ * elapsed time from `last_review` to now, so answering a card early is scored
+ * on the interval actually served rather than the one that was scheduled, and
+ * earns less stability accordingly. That is the honest behaviour and it is what
+ * Anki does too - but it does mean reviewing ahead really does move the card's
+ * schedule, including when it is only being used to exercise the voice path.
+ */
+export async function fetchAheadCards(
+  uid: string,
+  now: Date,
+  max = QUEUE_LIMIT,
+): Promise<Flashcard[]> {
+  const snap = await getDocs(
+    query(
+      cardsCollection(uid),
+      where('suspended', '==', false),
+      where('due', '>', Timestamp.fromDate(now)),
+      orderBy('due'),
+      limit(max),
+    ),
+  )
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Flashcard)
+}
+
 /** The soonest card that is NOT yet due - "next card in 4h" on the done screen. */
 export async function fetchNextDue(uid: string, now: Date): Promise<Flashcard | null> {
   const snap = await getDocs(
