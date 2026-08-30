@@ -476,11 +476,22 @@ export function VoiceReview() {
           type: 'realtime',
           instructions: SYSTEM_PROMPT,
           tools: [RECORD_GRADE_TOOL],
-          // Plain server VAD, auto-responding. Driving response.create by hand
-          // off speech_stopped made every model reply hostage to a VAD event
-          // firing cleanly, which it did not - the answer injection now hangs
-          // off response.done instead (see handleEvent).
-          audio: { input: { turn_detection: { type: 'server_vad' } } },
+          audio: {
+            input: {
+              // Plain server VAD, auto-responding. Driving response.create by
+              // hand off speech_stopped made every model reply hostage to a VAD
+              // event firing cleanly, which it did not - the answer injection
+              // now hangs off response.done instead (see handleEvent).
+              turn_detection: { type: 'server_vad' },
+              // Opt-in, and without it the transcription events never fire at
+              // all - which had been quietly writing null to every voice
+              // review's userAnswerTranscript. DESIGN.md section 3.1 keeps that
+              // field to explain why a card keeps failing (usually the card is
+              // bad, not you), and a review is the one thing in this app that
+              // cannot be rebuilt later. Same model as the capture path.
+              transcription: { model: 'gpt-4o-transcribe' },
+            },
+          },
         },
       })
 
