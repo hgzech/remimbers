@@ -94,10 +94,12 @@ export function subscribeToDueCount(
  * Anki does too - but it does mean reviewing ahead really does move the card's
  * schedule, including when it is only being used to exercise the voice path.
  */
+export const AHEAD_LIMIT = 4
+
 export async function fetchAheadCards(
   uid: string,
   now: Date,
-  max = QUEUE_LIMIT,
+  max = AHEAD_LIMIT,
 ): Promise<Flashcard[]> {
   const snap = await getDocs(
     query(
