@@ -21,7 +21,10 @@ import { toFsrsCard, type Flashcard, type Note } from '../lib/types'
 import { VoiceReview } from './VoiceReview'
 
 export function Review() {
-  const [voice, setVoice] = useState(false)
+  // Voice is the default (DESIGN.md section 9 - it is the Phase 4 differentiator).
+  // It also means opening Review does not immediately show the first card's
+  // question, which text mode does the moment it renders.
+  const [voice, setVoice] = useState(true)
 
   return (
     <div className="review-shell">
