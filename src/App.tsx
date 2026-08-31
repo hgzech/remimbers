@@ -5,6 +5,7 @@ import { Layout } from './components/Layout'
 import { Capture } from './routes/Capture'
 import { Review } from './routes/Review'
 import { Library } from './routes/Library'
+import { Admin } from './routes/Admin'
 
 // import.meta.env.BASE_URL is '/remimbers/' on GitHub Pages, '/' locally.
 // Router basename must match or every route 404s after deploy.
@@ -20,6 +21,7 @@ export default function App() {
               <Route path="/" element={<Capture />} />
               <Route path="/review" element={<Review />} />
               <Route path="/library" element={<Library />} />
+              <Route path="/admin" element={<Admin />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

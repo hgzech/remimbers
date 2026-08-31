@@ -44,8 +44,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 12px;
   padding: max(env(safe-area-inset-top), 12px) 16px 10px;
   border-bottom: 1px solid var(--border);
+}
+
+.admin-link {
+  font-size: 13px;
+  color: var(--text-dim);
 }
 
 .app-main {

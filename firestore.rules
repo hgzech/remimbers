@@ -9,10 +9,16 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/allowlist/$(request.auth.token.email.lower()));
     }
 
+    function isOwner() {
+      return isAllowed()
+        && get(/databases/$(database)/documents/allowlist/$(request.auth.token.email.lower())).data.role == 'owner';
+    }
+
     // The invite list. Readable by any signed-in user so the UI can explain
-    // itself; writable only from the Firebase console (no allow write rule).
+    // itself; writable by owners, from the in-app admin page or the console.
     match /allowlist/{email} {
       allow read: if request.auth != null;
+      allow write: if isOwner();
     }
 
     // Everything a user owns lives under their uid, so ownership is one check.
