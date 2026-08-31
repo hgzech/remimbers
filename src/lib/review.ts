@@ -104,8 +104,12 @@ export function subscribeToDueCount(
  * earns less stability accordingly. That is the honest behaviour and it is what
  * Anki does too - but it does mean reviewing ahead really does move the card's
  * schedule, including when it is only being used to exercise the voice path.
+ *
+ * Ten, so a test session is long enough to cross a batch boundary and exercise
+ * the handover rather than only the first batch. Voice review serves these
+ * BATCH_SIZE at a time, so ten arrives as 8 and then 2.
  */
-export const AHEAD_LIMIT = 4
+export const AHEAD_LIMIT = 10
 
 export async function fetchAheadCards(
   uid: string,

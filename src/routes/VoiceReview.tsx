@@ -34,10 +34,20 @@ const SYSTEM_PROMPT = `You are a spaced-repetition tutor drilling the user throu
 
 You have been handed the whole set at once: an ordered list, each card with its cardId, its question and its answer. Work through them strictly in order, one at a time.
 
-The cardinal rule - you are holding the answers:
-- Ask the first card, and say nothing whatsoever about any later card until you reach it. Never mention, hint at, preview or allude to a question or an answer the user has not been asked yet.
-- Never say an answer aloud before the user has attempted that card. The answers are in front of you so that you can judge, not so that you can share.
-- Do not summarise the set, do not say what is coming, do not say how many cards are left.
+THE CARDINAL RULE - you are holding answers the user has not earned yet.
+
+You can see every question and every answer in the set. The user can see none of them. So everything you say must be something that could be said by someone who knows only the cards already answered. Treat every card you have not yet asked as though you had never read it.
+
+- Never state, quote, paraphrase, spell, translate or partly reveal an answer before the user has attempted that card.
+- Read each question as written. Do not embellish it, do not rephrase it using words taken from its own answer, and do not add context you only have because you can see the answer.
+- Give NO structural hints before they attempt a card. Do not say how many parts the answer has, do not add "and where?", do not say "there's a place too", do not narrow the field with things like "it's a Greek name". If an answer has two elements they must find both unprompted - that is exactly what the multi-part rule below is testing.
+- Never trail a later card: no "this connects to something coming up", no "remember that for later", no "you'll see this one again".
+- Do not summarise the set, do not describe its themes, do not say what is coming, do not say how many cards remain.
+- If the user asks what is next, decline in a few words and put the current question to them.
+
+Before you speak, run one check over what you are about to say: does any part of it come from a card they have not yet answered? If so, cut that part.
+
+Why this rule outranks everything else here: a leak is invisible after the fact. A card whose answer you gave away still gets answered, still gets graded, still gets logged and scheduled - and the schedule then asserts a piece of knowledge that was never actually tested. Nothing downstream can tell that apart from a real review, so there is no catching it later. The only place it can be prevented is here.
 
 For each card, in this order:
 1. Read the question aloud, naturally. Then stop and wait.
@@ -67,9 +77,10 @@ Calling record_grade:
 - rating is what the user agreed to; judgedCorrect is your own binary call. They are independent and they are allowed to disagree.
 - Afterwards go straight into the next question. No confirmation, no "logged", no transition of any kind - the next question IS the transition.
 
-Noticing things is welcome, within limits:
-- You may remark on a pattern across cards already done - three answered instantly in a row, two circling the same topic, a lapse on something they had nailed earlier. Briefly, and only now and then.
-- Only ever about cards already answered. Never about cards still to come.
+Noticing things is welcome, within one hard limit:
+- You may briefly remark on a pattern among cards ALREADY ANSWERED - three answered instantly in a row, a lapse on something they had nailed earlier, two answered cards that turned out to share a topic.
+- Never about a card still to come, and never phrased so that it tells them anything about what is coming. "You're on a roll" is fine. "These next few are all Greek myth" is a leak wearing a compliment.
+- Occasionally, and in one short sentence. This is still a drill.
 
 Keep it tight:
 - One short sentence per turn. Never a paragraph.
@@ -168,6 +179,13 @@ export function VoiceReview() {
   /** Start of the current card, approximated - see handleRecordGrade. */
   const cardStartedAtRef = useRef(0)
   const sourceRef = useRef<Source>('due')
+  /**
+   * Ahead cards fetched but not yet handed over. Review ahead reads its whole
+   * allowance in one query and then serves it BATCH_SIZE at a time, so a test
+   * session crosses a real batch boundary instead of sitting in one oversized
+   * batch - the handover being the part most worth exercising.
+   */
+  const aheadReserveRef = useRef<Flashcard[]>([])
 
   /**
    * Handing the next batch over has to wait for two things: the fetch, and the
@@ -287,11 +305,12 @@ export function VoiceReview() {
     nextBatchRef.current = null
     setFetchingBatch(true)
 
-    // An `ahead` batch is a deliberate small sample - a way to exercise the
-    // session without waiting for the deck. Pulling more of them would quietly
-    // turn a spot check into an open-ended cram.
+    // Review ahead never issues a second query - it serves what it already
+    // reserved and then stops. Re-querying would quietly turn a spot check into
+    // an open-ended cram, every card of which moves a real schedule.
     if (sourceRef.current === 'ahead') {
-      nextBatchRef.current = []
+      nextBatchRef.current = aheadReserveRef.current
+      aheadReserveRef.current = []
       maybeStartNextBatch()
       return
     }
@@ -506,7 +525,12 @@ export function VoiceReview() {
       const fetcher = ahead ? fetchAheadCards : fetchDueCards
 
       void fetcher(uid, new Date(), ahead ? AHEAD_LIMIT : BATCH_SIZE)
-        .then(async (cards) => {
+        .then(async (all) => {
+          // Never hand the model more than one batch at a time, however many
+          // came back - the batch size is what bounds how long an unasked
+          // answer sits in context.
+          const cards = all.slice(0, BATCH_SIZE)
+          aheadReserveRef.current = all.slice(BATCH_SIZE)
           batchRef.current = new Map(cards.map((c) => [c.id, c]))
           remainingRef.current = cards.map((c) => c.id)
           setBatchTotal(cards.length)
@@ -598,6 +622,7 @@ export function VoiceReview() {
     setMuted(false)
     completedRef.current = new Set()
     gradedCallIdsRef.current = new Set()
+    aheadReserveRef.current = []
     itemIdsRef.current = []
     awaitingBatchRef.current = false
     nextBatchRef.current = null
