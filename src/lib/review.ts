@@ -26,17 +26,6 @@ import {
 export const QUEUE_LIMIT = 20
 
 /**
- * How many cards voice review loads into the model's context at once.
- *
- * Small on purpose. The whole batch - questions AND answers - sits in context
- * for its lifetime, so this is both the unit of conversational continuity and
- * the window over which an answer can leak into an earlier question. Eight is
- * enough for the model to notice a run of fast answers or two cards circling
- * the same topic, without holding answers it will not need for several minutes.
- */
-export const BATCH_SIZE = 8
-
-/**
  * The due query. One composite index (suspended, due), already deployed.
  *
  * `now` is baked into the query, so a listener on it will NOT notice a card
@@ -104,12 +93,8 @@ export function subscribeToDueCount(
  * earns less stability accordingly. That is the honest behaviour and it is what
  * Anki does too - but it does mean reviewing ahead really does move the card's
  * schedule, including when it is only being used to exercise the voice path.
- *
- * Ten, so a test session is long enough to cross a batch boundary and exercise
- * the handover rather than only the first batch. Voice review serves these
- * BATCH_SIZE at a time, so ten arrives as 8 and then 2.
  */
-export const AHEAD_LIMIT = 10
+export const AHEAD_LIMIT = 4
 
 export async function fetchAheadCards(
   uid: string,
