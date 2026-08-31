@@ -26,6 +26,17 @@ import {
 export const QUEUE_LIMIT = 20
 
 /**
+ * How many cards voice review loads into the model's context at once.
+ *
+ * Small on purpose. The whole batch - questions AND answers - sits in context
+ * for its lifetime, so this is both the unit of conversational continuity and
+ * the window over which an answer can leak into an earlier question. Eight is
+ * enough for the model to notice a run of fast answers or two cards circling
+ * the same topic, without holding answers it will not need for several minutes.
+ */
+export const BATCH_SIZE = 8
+
+/**
  * The due query. One composite index (suspended, due), already deployed.
  *
  * `now` is baked into the query, so a listener on it will NOT notice a card
