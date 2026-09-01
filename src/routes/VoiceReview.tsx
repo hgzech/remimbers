@@ -5,7 +5,20 @@ import { fetchAheadCards, fetchDueCards, fetchNextDue, gradeCard } from '../lib/
 import { SESSION_HORIZON_MS } from '../lib/fsrs'
 import { createRealtimeSession, mintToken, type RealtimeSession } from '../lib/realtime'
 import type { Flashcard } from '../lib/types'
+import { useLanguages } from '../settings/SettingsProvider'
 import { DoneScreen } from './Review'
+
+/**
+ * Transcription of what the USER says, for the review log - not the voice the
+ * model speaks with, which is the Realtime model itself (lib/realtime.ts).
+ *
+ * `gpt-4o-transcribe` retires 26 Feb 2027. `gpt-transcribe` replaces it, and
+ * is the right half of the pair here: it transcribes each committed turn once,
+ * which is exactly what a log field wants. `gpt-live-transcribe` streams
+ * incremental deltas for live captions nobody in this app is reading, at
+ * roughly four times the price.
+ */
+const TRANSCRIBE_MODEL = 'gpt-transcribe'
 
 /**
  * DESIGN.md sections 4.2/4.3.
@@ -146,6 +159,7 @@ type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking'
 
 export function VoiceReview() {
   const { user } = useAuth()
+  const languages = useLanguages()
   const uid = user?.uid
 
   const [phase, setPhase] = useState<Phase>('loading')
@@ -500,7 +514,13 @@ export function VoiceReview() {
               // field to explain why a card keeps failing (usually the card is
               // bad, not you), and a review is the one thing in this app that
               // cannot be rebuilt later. Same model as the capture path.
-              transcription: { model: 'gpt-4o-transcribe' },
+              //
+              // `languages` (plural) is required here, not `language` - the
+              // two must never both be sent. Without it this path had the same
+              // silent-translation bug as capture, except invisibly: nobody
+              // reads userAnswerTranscript during a session, so a German
+              // rendering of an English answer just landed in the log.
+              transcription: { model: TRANSCRIBE_MODEL, languages },
             },
           },
         },
@@ -515,7 +535,7 @@ export function VoiceReview() {
       sessionRef.current = null
       setPhase('idle')
     }
-  }, [handleEvent, injectCard])
+  }, [handleEvent, injectCard, languages])
 
   const toggleMuted = useCallback(() => {
     setMuted((m) => {

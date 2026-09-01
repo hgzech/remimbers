@@ -20,3 +20,6 @@ dev-dist
 .firebase
 firebase-debug.log
 .DS_Store
+
+# Local Claude Code scratch (launch configs, session state)
+/.claude/

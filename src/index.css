@@ -653,3 +653,64 @@ body {
 .voice-state-label { margin: 0; color: var(--text-dim); font-size: 13px; }
 
 .voice-actions { display: flex; gap: 10px; }
+
+/* ---------- languages + settings ---------- */
+
+/* The avatar became a link (it opens Settings), and an <a> does not centre
+   its own text the way a <button> did. */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.lang-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 4px 0;
+}
+
+.lang-chip {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.lang-chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+/* Unpicked chips once the cap is reached: the limit shown, not explained. */
+.lang-chip:disabled { opacity: 0.3; cursor: default; }
+
+/* The setup screen scrolls - 29 chips do not fit a phone alongside the
+   wordmark, and .centered alone would clip them. */
+.lang-setup {
+  justify-content: flex-start;
+  padding: max(env(safe-area-inset-top), 24px) 16px 24px;
+  overflow-y: auto;
+  gap: 12px;
+}
+.lang-hint { max-width: 34ch; text-align: center; }
+
+.settings { padding: 16px; display: grid; gap: 28px; }
+.settings-section { display: grid; gap: 10px; justify-items: start; }
+.settings-section .lang-grid { justify-content: flex-start; }
+.settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin: 0;
+}
+.settings .hint { margin: 0; }

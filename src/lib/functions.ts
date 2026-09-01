@@ -39,14 +39,22 @@ export async function callFunction<T>(name: string, body: unknown): Promise<T> {
  * Function unwraps it directly rather than requiring the client to build a
  * multipart request just to have the Function parse it back apart.
  */
-export async function transcribeAudio(blob: Blob): Promise<string> {
+export async function transcribeAudio(
+  blob: Blob,
+  languages: string[],
+): Promise<string> {
   const user = auth.currentUser
   if (!user) throw new Error('not signed in')
   if (!functionsBaseUrl) {
     throw new Error('VITE_FUNCTIONS_BASE_URL is empty - deploy functions first')
   }
 
-  const res = await fetch(`${functionsBaseUrl}/transcribe`, {
+  // Query string, not a body field: the body is the raw recording. The
+  // Function re-validates these against its own list, so a hand-edited URL
+  // cannot smuggle a code that would fail the whole OpenAI request.
+  const query = languages.length ? `?languages=${languages.join(',')}` : ''
+
+  const res = await fetch(`${functionsBaseUrl}/transcribe${query}`, {
     method: 'POST',
     headers: {
       'Content-Type': blob.type || 'application/octet-stream',

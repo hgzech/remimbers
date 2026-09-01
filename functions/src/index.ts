@@ -7,7 +7,7 @@ import { getAuth } from 'firebase-admin/auth'
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { createEmptyCard } from 'ts-fsrs'
 import { generateCards } from './generate.js'
-import { transcribeAudio } from './transcribe.js'
+import { parseLanguages, transcribeAudio } from './transcribe.js'
 import { mintRealtimeToken } from './realtime.js'
 
 const app = initializeApp()
@@ -263,9 +263,27 @@ export const transcribe = onRequest(
       return
     }
 
+    // The languages the user says they speak, pinned so the model cannot
+    // decide for itself and translate (see transcribe.ts). Query string
+    // because the body is the raw recording.
+    const languages = parseLanguages(req.query.languages)
+
     try {
-      const text = await transcribeAudio(audio, mimeType, openaiKey.value())
-      logger.info('transcribed', { uid, bytes: audio.length, chars: text.length })
+      const { text, detected } = await transcribeAudio(
+        audio,
+        mimeType,
+        openaiKey.value(),
+        languages,
+      )
+      // `detected` outside `languages` would mean the pin was ignored, which
+      // is the one failure this endpoint cannot see in its own output.
+      logger.info('transcribed', {
+        uid,
+        bytes: audio.length,
+        chars: text.length,
+        languages,
+        detected,
+      })
       res.json({ text })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

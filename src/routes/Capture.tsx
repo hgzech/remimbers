@@ -3,6 +3,7 @@ import type { PointerEvent } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { addNote } from '../lib/notes'
 import { transcribeAudio } from '../lib/functions'
+import { useLanguages } from '../settings/SettingsProvider'
 import { dequeue, enqueue, getPending, type QueuedAudio } from '../lib/audioQueue'
 
 /**
@@ -63,6 +64,16 @@ export function Capture() {
   // recording, rather than being evaluated as its own hold-vs-tap.
   const tapArmedRef = useRef(false)
 
+  // Read through a ref, not the closure: a recording can sit in the IndexedDB
+  // queue across a settings change (that is the entire point of the queue), so
+  // the retry must pin the languages you speak NOW, not the ones in scope when
+  // the effect that retries it was created.
+  const languages = useLanguages()
+  const languagesRef = useRef(languages)
+  useEffect(() => {
+    languagesRef.current = languages
+  }, [languages])
+
   useEffect(() => {
     if (showText) textareaRef.current?.focus()
   }, [showText])
@@ -92,7 +103,7 @@ export function Capture() {
       q.map((e) => (e.id === item.id ? { ...e, status: 'uploading', error: undefined } : e)),
     )
     try {
-      const transcript = await transcribeAudio(item.blob)
+      const transcript = await transcribeAudio(item.blob, languagesRef.current)
       // Fire and forget, same as text capture: the local write is durable the
       // moment it's called, and nothing downstream needs to wait for it.
       void addNote(user.uid, transcript, 'voice')

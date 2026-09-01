@@ -5,7 +5,7 @@ import { useIsOwner } from '../lib/allowlist'
 import { QUEUE_LIMIT, subscribeToDueCount } from '../lib/review'
 
 export function Layout() {
-  const { user, signOutNow } = useAuth()
+  const { user } = useAuth()
   const due = useDueCount()
   const isOwner = useIsOwner()
 
@@ -17,13 +17,13 @@ export function Layout() {
             Admin
           </NavLink>
         )}
-        <button
-          className="avatar"
-          onClick={signOutNow}
-          title={`${user?.email} — click to sign out`}
-        >
+        {/* Was an immediate sign-out. Now it opens Settings, which is where
+            sign-out lives - one mis-tap should not end your session, and
+            Settings needed a door anyway. The bottom nav stays at three: it is
+            thumb-reachable space for the things you do daily. */}
+        <NavLink className="avatar" to="/settings" title={user?.email ?? 'Settings'}>
           {user?.email?.[0]?.toUpperCase() ?? '?'}
-        </button>
+        </NavLink>
       </header>
 
       <main className="app-main">
