@@ -696,11 +696,22 @@ body {
    wordmark, and .centered alone would clip them. */
 .lang-setup {
   justify-content: flex-start;
-  padding: max(env(safe-area-inset-top), 24px) 16px 24px;
+  padding: max(env(safe-area-inset-top), 24px) 16px 16px;
   overflow-y: auto;
   gap: 12px;
 }
 .lang-hint { max-width: 34ch; text-align: center; }
+/* At phone width the chip grid is taller than the viewport, which put
+   Continue below the fold on the first screen a new user ever sees. Sticking
+   it to the bottom of the scroller keeps the primary action in reach without
+   moving it out of document order. The box-shadow is a full-bleed backdrop -
+   cheaper than a wrapper element, and it stops chips showing through. */
+.lang-setup .btn-primary {
+  position: sticky;
+  bottom: 0;
+  margin-top: 4px;
+  box-shadow: 0 0 0 14px var(--bg);
+}
 
 .settings { padding: 16px; display: grid; gap: 28px; }
 .settings-section { display: grid; gap: 10px; justify-items: start; }
