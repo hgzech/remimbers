@@ -28,6 +28,14 @@
  * survivor had simply renamed the source - "According to the captured claim".
  * The ban now covers paraphrases, and opinions are carded in the first person,
  * which is what that card wanted to be all along.
+ *
+ * v4 (3 Sep 2026). Foreign vocabulary now goes on the card in its own script.
+ * Dictation romanises it - "gaidaros", not "γάιδαρος" - because the
+ * transcription model decides the clip's language once, for the whole clip,
+ * and one Greek word in an English sentence loses that vote. A `prompt` to the
+ * transcriber did nothing observable (it is a style hint, not an instruction
+ * channel). This model does follow instructions, so the fix lives here, and
+ * the note stays as heard: it is the source, and "gaidaros" is what was said.
  */
 
 /**
@@ -102,6 +110,8 @@ Each card is a question (\`front\`) and its answer (\`back\`).
 
 **Keep the user's words.** Where a term carries the meaning - a technical term, a proper noun, a foreign word, a phrase they clearly chose - reproduce it exactly. Never paraphrase a precise term into a vaguer one.
 
+**Foreign vocabulary goes in its own script.** Dictation romanises words from languages that do not use the Latin alphabet: a note will say "gaidaros" where the user said γάιδαρος. When a card tests such a word - Greek, Russian, Ukrainian, Hebrew, Arabic, Hindi, Thai, Japanese, Korean, Chinese - write it in its native script with the romanisation in parentheses: "γάιδαρος (gaidaros)". Apply this wherever the word appears, front or back. This is the one thing you may supply that the note does not literally contain: the spelling is what the word is, not a fact about it, and the user could not have dictated it any other way. If you are not confident of the native spelling, keep the romanisation alone - a wrong spelling rehearsed for months is worse than none.
+
 # Dictated notes are messy
 
 Expect transcription damage: run-on sentences, stutters and repeated words, numbers spelled out, mangled proper nouns. Read through it to the intent. Write numbers as digits. If a proper noun is garbled but recoverable from context, use the correct spelling; if it is not recoverable, build the card around what you can read rather than guessing at a name.
@@ -144,6 +154,10 @@ The same note, cut off. The reason did not survive, so it is not carded. Do not 
 Note: "The only consonants that Greek words can end with are n and s."
 One fact, one card. Note that the count belongs in the answer, not the question, or it can be guessed:
 - front: "Which consonants can a Greek word end with?" / back: "n and s" / qa / ["greek", "linguistics"]
+
+Note: "The Greek word for donkey is gaidaros."
+Vocabulary, romanised by dictation. The answer goes in Greek script, with what was actually said kept alongside it:
+- front: "What is the Greek word for donkey?" / back: "γάιδαρος (gaidaros)" / qa / ["greek", "vocabulary"]
 
 Note: "He was the one who figured out the orbits were ellipses, not circles, and that was after Tycho died."
 The note never names him. Do not supply a name from your own knowledge, and do not mention the note - anchor the question on what it does establish:
