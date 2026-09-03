@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '../auth/AuthProvider'
 import {
   addToAllowlist,
   listAllowlist,
   removeFromAllowlist,
-  useIsOwner,
   type AllowlistEntry,
 } from '../lib/allowlist'
 
 export function Admin() {
-  const isOwner = useIsOwner()
+  const { isOwner } = useAuth()
   const [entries, setEntries] = useState<AllowlistEntry[] | null>(null)
   const [email, setEmail] = useState('')
-  const [inviting, setInviting] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function refresh() {
-    void listAllowlist().then(setEntries)
+    listAllowlist().then(setEntries, (err) => setError(describe(err)))
   }
 
   useEffect(() => {
@@ -30,26 +30,31 @@ export function Admin() {
     )
   }
 
-  async function invite() {
-    const trimmed = email.trim()
-    if (!trimmed) return
-    setInviting(true)
+  async function run(action: () => Promise<void>) {
+    setBusy(true)
     setError(null)
     try {
-      await addToAllowlist(trimmed)
-      setEmail('')
+      await action()
       refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(describe(err))
     } finally {
-      setInviting(false)
+      setBusy(false)
     }
   }
 
-  async function remove(memberEmail: string) {
+  function invite() {
+    const trimmed = email.trim()
+    if (!trimmed) return
+    void run(async () => {
+      await addToAllowlist(trimmed)
+      setEmail('')
+    })
+  }
+
+  function remove(memberEmail: string) {
     if (!confirm(`Remove ${memberEmail} from the allowlist?`)) return
-    await removeFromAllowlist(memberEmail)
-    refresh()
+    void run(() => removeFromAllowlist(memberEmail))
   }
 
   return (
@@ -64,15 +69,15 @@ export function Admin() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') void invite()
+            if (e.key === 'Enter') invite()
           }}
         />
         <button
           className="btn btn-primary"
-          onClick={() => void invite()}
-          disabled={!email.trim() || inviting}
+          onClick={invite}
+          disabled={!email.trim() || busy}
         >
-          {inviting ? 'Inviting…' : 'Invite'}
+          {busy ? 'Working…' : 'Invite'}
         </button>
       </div>
       {error && <p className="card-fail-msg">{error}</p>}
@@ -88,10 +93,13 @@ export function Admin() {
               <p className="note-text">{entry.email}</p>
               <div className="note-meta">
                 {entry.role && <span className="badge">{entry.role}</span>}
-                {!entry.role && (
+                {/* Owners are managed from the console; the rules refuse the
+                    delete anyway, so don't offer a button that can't work. */}
+                {entry.role !== 'owner' && (
                   <button
                     className="linkbtn danger note-delete"
-                    onClick={() => void remove(entry.email)}
+                    onClick={() => remove(entry.email)}
+                    disabled={busy}
                   >
                     Remove
                   </button>
@@ -103,4 +111,8 @@ export function Admin() {
       )}
     </>
   )
+}
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }

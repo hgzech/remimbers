@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
-import { useIsOwner } from '../lib/allowlist'
 import { QUEUE_LIMIT, subscribeToDueCount } from '../lib/review'
 
 export function Layout() {
-  const { user } = useAuth()
+  const { user, isOwner } = useAuth()
   const due = useDueCount()
-  const isOwner = useIsOwner()
 
   return (
     <div className="app">

@@ -12,6 +12,13 @@ interface AuthState {
   access: Access
   /** Human-readable reason when access is 'not-allowed' or 'blocked'. */
   detail: string | null
+  /**
+   * Whether the allowlist entry carries `role: 'owner'`. Read off the same
+   * snapshot as the access check, so it is known before the gate opens and
+   * costs no extra round trip. The rules are the real guard - this only
+   * decides whether to show the admin link.
+   */
+  isOwner: boolean
   /** True while a popup is open, so the button can refuse a second click. */
   signingIn: boolean
   signIn: () => Promise<void>
@@ -40,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [access, setAccess] = useState<Access>('loading')
   const [detail, setDetail] = useState<string | null>(null)
+  const [isOwner, setIsOwner] = useState(false)
   const [signingIn, setSigningIn] = useState(false)
   const inFlight = useRef(false)
 
@@ -47,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onAuthStateChanged(auth, async (u) => {
       setUser(u)
       setDetail(null)
+      setIsOwner(false)
 
       if (!u) {
         setAccess('signed-out')
@@ -58,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const snap = await getDoc(doc(db, 'allowlist', email))
         if (snap.exists()) {
+          setIsOwner(snap.data().role === 'owner')
           setAccess('ok')
         } else {
           setAccess('not-allowed')
@@ -88,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     access,
     detail,
+    isOwner,
     signingIn,
     signIn: async () => {
       // Guard at the source: a second popup is what generates

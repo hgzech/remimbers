@@ -9,16 +9,29 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/allowlist/$(request.auth.token.email.lower()));
     }
 
-    function isOwner() {
-      return isAllowed()
-        && get(/databases/$(database)/documents/allowlist/$(request.auth.token.email.lower())).data.role == 'owner';
+    function ownEmail() {
+      return request.auth.token.email.lower();
     }
 
-    // The invite list. Readable by any signed-in user so the UI can explain
-    // itself; writable by owners, from the in-app admin page or the console.
+    function isOwner() {
+      let me = get(/databases/$(database)/documents/allowlist/$(ownEmail())).data;
+      return isAllowed() && 'role' in me && me.role == 'owner';
+    }
+
+    // The invite list.
+    //
+    // Anyone signed in may read THEIR OWN entry, so the UI can say "you're not
+    // invited" instead of showing a wall of permission errors. Only owners may
+    // list the collection - the Firebase config is public, so a plain
+    // `allow read` would let any Google account enumerate everyone invited.
+    //
+    // Owners may write any entry except their own. That one guard is what
+    // stops an owner locking everyone out with a stray write to their own doc;
+    // the owner's own entry is managed from the console only.
     match /allowlist/{email} {
-      allow read: if request.auth != null;
-      allow write: if isOwner();
+      allow get: if request.auth != null && email == ownEmail();
+      allow list: if isOwner();
+      allow write: if isOwner() && email != ownEmail();
     }
 
     // Everything a user owns lives under their uid, so ownership is one check.
