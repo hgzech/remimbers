@@ -50,6 +50,31 @@ const DEFAULT_LANGUAGES = ['en']
 const MAX_LANGUAGES = 4
 
 /**
+ * Script hints for languages the model otherwise tends to transliterate into
+ * Latin letters. Only sent when at least one of these is actually requested -
+ * a prompt full of scripts nobody asked for is just noise the model has to
+ * read past.
+ */
+const SCRIPT_HINTS: Record<string, string> = {
+  el: 'Greek words should be written in Greek script (e.g. θάλασσα, φιλοσοφία).',
+  ru: 'Russian words should be written in Cyrillic script (e.g. привет).',
+  uk: 'Ukrainian words should be written in Cyrillic script (e.g. привіт).',
+  he: 'Hebrew words should be written in Hebrew script (e.g. שלום).',
+  ar: 'Arabic words should be written in Arabic script (e.g. مرحبا).',
+  hi: 'Hindi words should be written in Devanagari script (e.g. नमस्ते).',
+  th: 'Thai words should be written in Thai script (e.g. สวัสดี).',
+  ja: 'Japanese words should be written in Japanese script (e.g. こんにちは).',
+  ko: 'Korean words should be written in Hangul script (e.g. 안녕하세요).',
+  'zh-cn': 'Simplified Chinese characters (e.g. 你好).',
+  'zh-tw': 'Traditional Chinese characters (e.g. 你好).',
+}
+
+function scriptPromptFor(languages: string[]): string | null {
+  const hints = languages.map((code) => SCRIPT_HINTS[code]).filter(Boolean)
+  return hints.length ? hints.join(' ') : null
+}
+
+/**
  * Parse the `languages` query parameter: "en,de" -> ['en', 'de'].
  *
  * Unknown codes are dropped rather than rejected. A client one deploy behind,
@@ -110,6 +135,9 @@ export async function transcribeAudio(
   // Repeated `languages[]` fields - the multipart convention for an array.
   // A single comma-joined `languages` value is silently ignored.
   for (const code of languages) form.append('languages[]', code)
+
+  const scriptPrompt = scriptPromptFor(languages)
+  if (scriptPrompt) form.append('prompt', scriptPrompt)
 
   const res = await fetch(TRANSCRIPTION_URL, {
     method: 'POST',
