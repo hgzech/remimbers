@@ -41,10 +41,8 @@ const TRANSCRIBE_MODEL = 'gpt-transcribe'
  * silently mixes behaviour from before and after a revision, and a fix looks
  * like it regressed something it never touched.
  */
-const PROMPT_VERSION = '2026-09-12'
+const PROMPT_VERSION = '2026-09-12.2'
 
-/** How long the session waits for a spoken explanation before moving on. */
-const FEEDBACK_TIMEOUT_MS = 60_000
 
 /**
  * DESIGN.md sections 4.2/4.3.
@@ -156,40 +154,66 @@ Keep it tight. This is the difference between a drill and a slog:
  * rating. Every one of those is recoverable on its own; together they left a
  * review row describing something that never happened, and no way to say so.
  *
- * The model is told not to argue about it, deliberately. It is the least
- * reliable possible judge of whether its own turn went wrong - it did not hear
- * what the user heard, and a model defending a grade is the exact behaviour
- * that made the original failure infuriating rather than merely annoying.
+ * It asks before it acts, and the asking is the design rather than caution.
+ * "That went wrong" is genuinely ambiguous - it can mean "undo that", and it
+ * can mean "I misspoke" or just be thinking aloud - and the action behind it
+ * DELETES a review row (DESIGN.md section 3.2). One short question is cheap;
+ * a silent rewrite of the log on a misheard aside is not. Asking also puts the
+ * decision with the person who heard what actually came out of the speaker,
+ * which the model is in no position to judge.
+ *
+ * What it must not become is a negotiation. One question, then do as told -
+ * a model defending its own grade is the behaviour that made the original
+ * failure infuriating rather than merely annoying.
  */
-const ROLLBACK_PROMPT = `
+function rollbackPrompt(feedbackOptIn: boolean): string {
+  const ask = feedbackOptIn
+    ? `- Ask ONE short question, and put both halves in it: whether they want that card again, and what went wrong. "Want to do that one again - what went wrong?" Then stop and wait.`
+    : `- Ask ONE short question: whether they want that card again. "Want to do that one again?" Then stop and wait.`
+
+  const call = feedbackOptIn
+    ? `- If they confirm, call rollback_card, and pass whatever they said went wrong as \`feedback\` - their words, not your diagnosis of them. If they confirmed without explaining, leave it empty rather than inventing a reason. Do not ask a second time; someone who did not answer the "what went wrong" half has told you something by not answering it.`
+    : `- If they confirm, call rollback_card.`
+
+  return `
 
 Recovering a card that went wrong - rollback_card:
-- If the user says the last card went wrong - "something went wrong", "go back", "that was broken", "I never said that", "you cut me off", "that got logged wrong" - call rollback_card. Immediately.
-- Do NOT argue, do not defend what you did, do not explain what you think happened, and do not ask them to confirm. They were there and you were not, in the only sense that matters: they heard what came out.
-- It undoes the PREVIOUS card, and only that one: the grade is reversed, its log row is discarded, and that same card is handed back to you to ask again from the top. You cannot reach further back than one card - if they want something older, say so plainly.
-- The rollback_card turn is SILENT, exactly like record_grade. Call it and stop. Say nothing about undoing, reversing or trying again.
-- Then do nothing further on your own. You will be told what happens next - either the card comes back to you to ask, or you will be asked to find out what went wrong first. Never re-ask the card off your own bat.
+- If the user says the last card went wrong - "something went wrong", "that was broken", "I never said that", "you cut me off", "that got logged wrong" - do NOT act on it yet.
+${ask}
+${call}
+- If they say no, or they meant something else, leave the card alone and carry on. Nothing is undone and nothing needs saying about it.
+- Ask once and once only. Do not argue, do not defend what you did, do not explain what you think happened, and do not ask again if they have already been clear. They were there and you were not, in the only sense that matters: they heard what came out.
+- If they ask for the rollback outright and unmistakably - "go back and redo that card", "redo that one" - that IS the confirmation. Call it, do not ask them to confirm what they have just told you.
+- It undoes the PREVIOUS card, and only that one: the grade is reversed, its log row is discarded, and that same card comes straight back to you to ask again from the top. You cannot reach further back than one card - if they want something older, say so plainly.
+- The rollback_card turn is SILENT, exactly like record_grade. Call it and stop. Say nothing about undoing, reversing or trying again - the card arriving again is the proof it worked.
 - Not a rollback: a card the user simply found hard, an answer they want to discuss, or a question about something you said. Those you just talk about.`
+}
 
 /**
- * Feedback, appended only when the user has opted in (lib/settings.ts).
+ * Standalone feedback, appended only when the user has opted in.
  *
- * Withheld rather than softened when they have not: a model that has been told
- * about a tool it cannot call will eventually reach for it, and "I'd log that
- * but I'm not allowed" is a worse experience than never being asked.
+ * Rollback-attached feedback does NOT come through here - it rides along on
+ * rollback_card's own argument, so the whole recovery is one question and one
+ * tool call rather than an undo followed by an interview. This tool is for the
+ * other case: the grade stood, the card was fine, and something else was wrong.
+ *
+ * Withheld rather than softened when the user has not opted in: a model that
+ * has been told about a tool it cannot call will eventually reach for it, and
+ * "I'd log that but I'm not allowed" is a worse experience than never being
+ * asked.
  */
 const FEEDBACK_PROMPT = `
 
-Finding out what went wrong - record_feedback:
-- After a rollback you will usually be asked to find out what happened. Ask ONE short question - "What went wrong there?" - and then stop and wait.
-- When they answer, call record_feedback with what they said. Keep their words; do not tidy them, do not summarise them into a diagnosis, and do not add your own account of what you think happened. The point of the row is what THEY thought was wrong.
-- If they would rather not say - "never mind", "doesn't matter", "just go on" - do not press. Call record_feedback with transcript "declined" and move on. Asking twice for feedback about being annoying is its own bug.
-- The user can also report something without rolling anything back: "that was rude", "you sounded impatient", "you read that far too fast". The grade stands and the card is fine - just call record_feedback with what they said and carry on with the card you were on. Do not re-ask the question and do not start over.
+Reporting something that is not worth a rollback - record_feedback:
+- Sometimes the grade was right and the card is fine, but something else was off: "that was rude", "you sounded impatient", "you read that far too fast". Call record_feedback with what they said and carry on with the card you are on. Do not re-read the question, do not start over, and do not roll anything back.
+- Keep their words. Do not tidy them, do not summarise them into a diagnosis, and do not add your own account of what you think happened. The point of the row is what THEY thought was wrong.
 - Acknowledge in one word at most - "Noted." Do not apologise at length, do not promise it will not happen again, and do not explain yourself. A long apology costs more of the user's session than the original mistake did.
 - The record_feedback turn is otherwise SILENT, like the other tools.`
 
 function buildSystemPrompt(feedbackOptIn: boolean): string {
-  return SYSTEM_PROMPT + ROLLBACK_PROMPT + (feedbackOptIn ? FEEDBACK_PROMPT : '')
+  return (
+    SYSTEM_PROMPT + rollbackPrompt(feedbackOptIn) + (feedbackOptIn ? FEEDBACK_PROMPT : '')
+  )
 }
 
 const RECORD_GRADE_TOOL = {
@@ -223,19 +247,20 @@ const ROLLBACK_TOOL = {
   name: 'rollback_card',
   description:
     'Undo the previous card: reverse its grade, discard its log row, and get the ' +
-    'card back to ask again. Call this as soon as the user says that card went ' +
-    'wrong. Never call it for a card they merely found difficult.',
+    'card back to ask again. Call this only once the user has confirmed they want ' +
+    'that card again. Never call it for a card they merely found difficult.',
   parameters: {
     type: 'object',
     properties: {
-      reason: {
+      feedback: {
         type: 'string',
         description:
-          'One short phrase on what the user said went wrong, in their terms. ' +
-          'Best effort - the rollback happens regardless of what this says.',
+          "What the user said went wrong, in their own words, as close to " +
+          'verbatim as you can manage. Empty string if they confirmed without ' +
+          'saying - never a reason you inferred for them.',
       },
     },
-    required: ['reason'],
+    required: ['feedback'],
     additionalProperties: false,
   },
 }
@@ -306,16 +331,6 @@ interface LastGrade {
   turn: TurnTranscript
 }
 
-/** The turn a pending feedback row is about, captured before it is cleared. */
-interface FeedbackContext {
-  kind: 'rollback' | 'standalone'
-  cardId: string | null
-  reviewId: string | null
-  cardFront: string | null
-  cardBack: string | null
-  turn: TurnTranscript
-}
-
 export function VoiceReview() {
   const { user } = useAuth()
   const languages = useLanguages()
@@ -343,11 +358,6 @@ export function VoiceReview() {
   const turnRef = useRef<TurnTranscript>(emptyTurn(null))
   /** The one grade a rollback may undo. Cleared the moment it is used. */
   const lastGradeRef = useRef<LastGrade | null>(null)
-  /** What a pending feedback row is about; null means "the current card". */
-  const feedbackContextRef = useRef<FeedbackContext | null>(null)
-  /** The card to re-ask once feedback lands, and the timer that gives up on it. */
-  const awaitingFeedbackRef = useRef<Flashcard | null>(null)
-  const feedbackTimerRef = useRef<number | null>(null)
   /** Stamped onto the re-run's review row so the replacement is identifiable. */
   const pendingReplacementRef = useRef<{ cardId: string; reviewId: string } | null>(null)
   /** Tool calls already acted on - the same call can arrive twice. */
@@ -407,7 +417,6 @@ export function VoiceReview() {
   useEffect(() => {
     return () => {
       sessionRef.current?.close()
-      if (feedbackTimerRef.current !== null) clearTimeout(feedbackTimerRef.current)
     }
   }, [])
 
@@ -437,9 +446,9 @@ export function VoiceReview() {
       if (!sessionRef.current) return
       cardShownAtRef.current = Date.now()
       backInjectedRef.current = false
-      // The previous card's transcripts die here. Anything that still needs
-      // them (a feedback row mid-flight) has already copied what it wants into
-      // feedbackContextRef - see handleRollback.
+      // The previous card's transcripts die here. A rollback writes its
+      // feedback row before calling this, for exactly that reason - by the time
+      // the card is re-asked, the turn it went wrong on is gone.
       turnRef.current = emptyTurn(card.id)
       sendSystemText(
         `New card. cardId: "${card.id}"\n` +
@@ -467,12 +476,6 @@ export function VoiceReview() {
    */
   const finish = useCallback(
     async (opts?: { immediate?: boolean }) => {
-      // Whatever the session was waiting for, it is not coming.
-      awaitingFeedbackRef.current = null
-      if (feedbackTimerRef.current !== null) {
-        clearTimeout(feedbackTimerRef.current)
-        feedbackTimerRef.current = null
-      }
       if (!opts?.immediate) {
         // Mic off first. The session is ending either way, and a stray word or
         // a cough during the wait would otherwise wake server VAD, trigger a
@@ -538,25 +541,6 @@ export function VoiceReview() {
 
       const card = queueRef.current[0]
       if (!card) return
-
-      // A rolled-back card is waiting to be asked again, so there is nothing
-      // to grade yet - whatever the model thinks it heard, it was the answer
-      // to "what went wrong?", not to a flashcard. Grading here would write a
-      // row for a question that has not been asked twice over.
-      if (awaitingFeedbackRef.current) {
-        replyToTool(
-          item.call_id,
-          {
-            ok: false,
-            error:
-              'Nothing was logged. That card was rolled back and has not been ' +
-              'asked again yet. Find out what went wrong first, record it, and ' +
-              'wait to be handed the card.',
-          },
-          { respond: true },
-        )
-        return
-      }
 
       let args: any = {}
       try {
@@ -688,42 +672,8 @@ export function VoiceReview() {
   )
 
   /**
-   * Ask the model to find out what went wrong, and re-ask the card once it has.
-   *
-   * The card is deliberately NOT re-injected here. Injecting it would have the
-   * model read the question in the same breath as asking what went wrong, and
-   * the user would be answering a flashcard when they meant to be complaining
-   * about one. The timer is the safety net: if no feedback ever arrives - the
-   * model forgets to call the tool, the user wanders off mid-sentence - the
-   * session carries on rather than sitting there silently forever.
-   */
-  const armFeedbackAsk = useCallback(
-    (card: Flashcard) => {
-      awaitingFeedbackRef.current = card
-      if (feedbackTimerRef.current !== null) clearTimeout(feedbackTimerRef.current)
-      feedbackTimerRef.current = window.setTimeout(() => {
-        feedbackTimerRef.current = null
-        const waiting = awaitingFeedbackRef.current
-        if (!waiting) return
-        awaitingFeedbackRef.current = null
-        feedbackContextRef.current = null
-        injectCard(waiting)
-      }, FEEDBACK_TIMEOUT_MS)
-
-      sendSystemText(
-        'That card has been rolled back and its log row discarded. Before it ' +
-          'comes round again: ask the user, in ONE short sentence, what went ' +
-          'wrong. Then stop and wait for their answer, and call record_feedback ' +
-          'with it. Do not ask the flashcard question - you will be handed the ' +
-          'card again once the feedback is in.',
-      )
-      sessionRef.current?.send({ type: 'response.create' })
-    },
-    [injectCard, sendSystemText],
-  )
-
-  /**
-   * Undo the previous grade and put the card back at the head of the queue.
+   * Undo the previous grade and put the card straight back at the head of the
+   * queue, having already been confirmed out loud (see rollbackPrompt).
    *
    * The review row is deleted rather than annotated (review.ts/undoGrade,
    * DESIGN.md section 3.2). The session state is restored from the snapshot
@@ -732,6 +682,14 @@ export function VoiceReview() {
    * re-queued at the tail and bumped the session total, one rated `Good` was
    * dropped, and reconstructing which happened from the current queue alone
    * means guessing.
+   *
+   * The feedback row, when there is one, is written HERE rather than left to a
+   * follow-up question. The explanation was already given in the same breath as
+   * the confirmation, so a second ask would be asking someone to repeat
+   * themselves immediately after they complained about not being listened to.
+   * It is also the last moment the broken turn still exists: the review row is
+   * about to be gone, and these transcripts are about to be overwritten by the
+   * re-run.
    */
   const handleRollback = useCallback(
     (item: any) => {
@@ -761,6 +719,37 @@ export function VoiceReview() {
         setError(e instanceof Error ? e.message : String(e)),
       )
 
+      // With the review row gone, this is the only record that the failure
+      // happened at all - so it is written before anything else can overwrite
+      // the transcripts it depends on. Only when the user has opted in; without
+      // that, a rollback is a repair to their own deck and leaves no trace
+      // anywhere, which is the whole claim the setting makes (lib/settings.ts).
+      if (feedbackOptInRef.current) {
+        let args: any = {}
+        try {
+          args = JSON.parse(item.arguments ?? '{}')
+        } catch {
+          // An unparseable argument loses the user's words, not the row. The
+          // transcripts are the diagnosis; the complaint is the index into them.
+        }
+        logFeedback({
+          uid,
+          transcript: typeof args.feedback === 'string' ? args.feedback.trim() : '',
+          kind: 'rollback',
+          cardId: last.card.id,
+          reviewId: last.reviewId,
+          cardFront: last.card.front,
+          cardBack: last.card.back,
+          userTranscript: last.turn.user.length ? last.turn.user.join('\n') : null,
+          assistantTranscript: last.turn.assistant.length
+            ? last.turn.assistant.join('\n')
+            : null,
+          realtimeModel: REALTIME_MODEL,
+          transcribeModel: TRANSCRIBE_MODEL,
+          promptVersion: `${PROMPT_VERSION}+fb`,
+        }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      }
+
       // Put the session back exactly as it stood before the grade.
       queueRef.current = last.queue
       setRemaining(last.queue.length)
@@ -768,41 +757,23 @@ export function VoiceReview() {
       if (last.requeued) setTotal((n) => Math.max(0, n - 1))
 
       // The re-run's row carries the discarded row's id, which is the only
-      // thing that can line it up with the feedback row written against it.
+      // thing that can line it up with the feedback row written just above.
       pendingReplacementRef.current = { cardId: last.card.id, reviewId: last.reviewId }
-
-      // Snapshot the broken turn before injectCard drops it. With the review
-      // row gone, this is now the only record that the failure happened.
-      feedbackContextRef.current = {
-        kind: 'rollback',
-        cardId: last.card.id,
-        reviewId: last.reviewId,
-        cardFront: last.card.front,
-        cardBack: last.card.back,
-        turn: last.turn,
-      }
 
       replyToTool(item.call_id, { ok: true })
       clearHistory()
-
-      if (feedbackOptInRef.current) {
-        armFeedbackAsk(last.card)
-      } else {
-        // Nothing to ask, so nothing to keep either.
-        feedbackContextRef.current = null
-        injectCard(last.card)
-      }
+      injectCard(last.card)
     },
-    [uid, clearHistory, injectCard, replyToTool, armFeedbackAsk],
+    [uid, clearHistory, injectCard, replyToTool],
   )
 
   /**
-   * Write one feedback row, then put the session back where it was.
+   * Write one feedback row about the card in flight, and carry on.
    *
-   * Two entry points land here. After a rollback, feedbackContextRef holds the
-   * broken turn and the card is waiting to be re-asked. Volunteered on its own,
-   * there is no context and the row is about the card currently in flight - the
-   * grade stood, so nothing is undone and the session simply carries on.
+   * Standalone only - feedback attached to a rollback rides along on
+   * rollback_card itself (above). This is the case where the grade stood and
+   * the card was fine, so nothing is undone and the session picks up exactly
+   * where it was.
    */
   const handleRecordFeedback = useCallback(
     (item: any) => {
@@ -814,24 +785,22 @@ export function VoiceReview() {
       try {
         args = JSON.parse(item.arguments ?? '{}')
       } catch {
-        // Empty args is handled below - a row with no complaint in it is
-        // still worth writing, because the transcripts are the diagnosis.
+        // Same as above - the transcripts still carry the diagnosis.
       }
-      const transcript = typeof args.transcript === 'string' ? args.transcript.trim() : ''
 
-      const ctx = feedbackContextRef.current
-      feedbackContextRef.current = null
-      const current = queueRef.current[0] ?? null
-      const turn = ctx?.turn ?? turnRef.current
+      const card = queueRef.current[0] ?? null
+      const turn = turnRef.current
 
       logFeedback({
         uid,
-        transcript,
-        kind: ctx?.kind ?? 'standalone',
-        cardId: ctx?.cardId ?? current?.id ?? null,
-        reviewId: ctx?.reviewId ?? null,
-        cardFront: ctx?.cardFront ?? current?.front ?? null,
-        cardBack: ctx?.cardBack ?? current?.back ?? null,
+        transcript: typeof args.transcript === 'string' ? args.transcript.trim() : '',
+        kind: 'standalone',
+        cardId: card?.id ?? null,
+        // No review row exists yet: this card has not been graded, and after a
+        // standalone report it still will be, by the row this one is not about.
+        reviewId: null,
+        cardFront: card?.front ?? null,
+        cardBack: card?.back ?? null,
         // Joined rather than kept as arrays: a turn is a conversation, and the
         // order of what was said is most of what makes it readable. Firestore
         // would take the arrays happily; a person reading the corpus would not.
@@ -839,32 +808,20 @@ export function VoiceReview() {
         assistantTranscript: turn.assistant.length ? turn.assistant.join('\n') : null,
         realtimeModel: REALTIME_MODEL,
         transcribeModel: TRANSCRIBE_MODEL,
-        promptVersion: feedbackOptInRef.current ? `${PROMPT_VERSION}+fb` : PROMPT_VERSION,
+        promptVersion: `${PROMPT_VERSION}+fb`,
       }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
 
       replyToTool(item.call_id, { ok: true })
 
-      const waiting = awaitingFeedbackRef.current
-      if (waiting) {
-        awaitingFeedbackRef.current = null
-        if (feedbackTimerRef.current !== null) {
-          clearTimeout(feedbackTimerRef.current)
-          feedbackTimerRef.current = null
-        }
-        clearHistory()
-        injectCard(waiting)
-        return
-      }
-
-      // Standalone: the card in flight is untouched and mid-conversation, so
-      // the model is told to pick it back up rather than start it again.
+      // The card in flight is untouched and mid-conversation, so the model is
+      // told to pick it back up rather than start it again.
       sendSystemText(
         'Logged. Carry on with the card you are on - do not re-read the ' +
           'question unless the user asks you to, and do not start a new card.',
       )
       sessionRef.current?.send({ type: 'response.create' })
     },
-    [uid, clearHistory, injectCard, replyToTool, sendSystemText],
+    [uid, replyToTool, sendSystemText],
   )
 
   const handleEvent = useCallback(
@@ -1043,7 +1000,6 @@ export function VoiceReview() {
         handledCallIdsRef.current = new Set()
         // A new session has no previous card, so nothing to roll back into.
         lastGradeRef.current = null
-        feedbackContextRef.current = null
         pendingReplacementRef.current = null
         turnRef.current = emptyTurn(null)
         setTotal(cards.length)

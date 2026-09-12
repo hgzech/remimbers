@@ -17,7 +17,7 @@
 | Grading | LLM judges correct/incorrect; **user picks the difficulty** | Sidesteps LLM leniency (§4.3) |
 | Text review | **Included** | It *is* Phase 2 — free by construction (§4.4) |
 | Review log | **Schema fixed before the UI**; stores its own FSRS replay state | Rows survive reparameterisation, card deletion, and card edits (§3.1) |
-| Rollback | **One card back; the discarded row is deleted, not annotated** | The single exception to append-only (§3.2) |
+| Rollback | **Confirmed out loud; one card back; the discarded row is deleted, not annotated** | The single exception to append-only (§3.2) |
 | Feedback | **Opt-in; transcripts held in memory, written only on a report** | Audio stays unpersisted; failures become a corpus (§4.5) |
 | Fraud | Accepted | No server-side grade validation |
 
@@ -195,11 +195,26 @@ history:
   join key between the two — the feedback row was written against an id that no
   longer resolves to anything, deliberately.
 
-The user-facing half is one sentence: **it is voice-triggered.** "Something went
-wrong there, go back." In an app whose whole premise is that your hands are
-busy, a recovery that needs a button is a recovery that does not exist — and the
-moment you most want it is the moment you are most annoyed, which is the worst
-possible time to ask someone to look at a screen.
+The user-facing half is voice, necessarily: in an app whose premise is that your
+hands are busy, a recovery that needs a button is a recovery that does not
+exist, and the moment you most want it is the moment you are most annoyed —
+the worst possible time to ask anyone to look at a screen.
+
+**And it confirms before it acts.** "That went wrong" is ambiguous in a way that
+matters here: it can mean *undo that*, and it can mean *I misspoke*, and it can
+be thinking aloud. The action behind it deletes a row, so the model asks one
+short question — "Want to do that one again?" — and does nothing unless the
+answer is yes. One question is cheap; silently rewriting the log off a misheard
+aside is not. An unmistakable instruction ("go back and redo that card") is
+taken as its own confirmation, because asking someone to confirm what they have
+just plainly said is its own kind of not listening.
+
+What the question must not become is a negotiation. It is asked once, and then
+the model does as it is told — no defending the grade, no explaining what it
+thinks happened. A model arguing about whether its own turn went wrong is the
+behaviour that made the original failure infuriating rather than merely
+annoying, and it is in no position to judge: it did not hear what the user
+heard.
 
 ### Due-card query
 
@@ -324,11 +339,16 @@ A rollback recovers the card. It does not tell anyone what went wrong, and the
 row that might have said was just deleted. So the second half of the same
 mechanism: **the session can ask, and log the answer.**
 
-Two entry points, both spoken. Attached to a rollback — after the undo, the
-model asks "what went wrong there?" once, records the reply, and only then
-re-asks the card. And standalone, for when the grade was fine but something else
-was not ("you sounded impatient", "you read that far too fast"); the session
-logs it and carries on where it was.
+Two entry points, both spoken. **Attached to a rollback**, where it rides along
+on the confirmation §3.2 already asks for: "Want to do that one again — what
+went wrong?" is one question, and the answer to both halves arrives in one
+reply, which then travels as an argument on the rollback itself. Asking
+separately, after the undo, would mean asking someone to explain themselves
+immediately after they complained about not being listened to. If they confirm
+without explaining, that is an answer too and is not asked about twice. And
+**standalone**, for when the grade was fine but something else was not ("you
+sounded impatient", "you read that far too fast"); the session logs it and
+carries on where it was, undoing nothing.
 
 **What a row has to carry to be worth having.** The complaint alone is not
 diagnosable. "It cut me off and got it wrong" names no card, no answer and no
