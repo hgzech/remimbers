@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -8,6 +9,7 @@ import {
   query,
   serverTimestamp,
   Timestamp,
+  updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore'
@@ -141,6 +143,13 @@ export interface ReviewTelemetry {
   llmJudgedCorrect?: boolean | null
   userAnswerTranscript?: string | null
   llmRationale?: string | null
+  /**
+   * Set when this answer is the re-run of a card a rollback discarded.
+   * See types.ts - the flag is what keeps a replacement distinguishable from
+   * an untouched first pass without hiding it from the optimiser.
+   */
+  afterRollback?: boolean
+  replacesReviewId?: string | null
 }
 
 /**
@@ -155,6 +164,11 @@ export interface ReviewTelemetry {
  * await it: with offline persistence the write lands locally at once but the
  * promise only settles on server acknowledgement, which may be tomorrow. The
  * caller advances on `next` and merely reports failures from `committed`.
+ *
+ * `reviewId` comes back for one reason: a voice session may have to undo this
+ * (undoGrade, below), and the id is generated here. Returning it beats having
+ * the caller re-query for the row it just wrote - offline, that query would
+ * be answered from cache and the caller would be guessing.
  */
 export function gradeCard(
   uid: string,
@@ -162,7 +176,7 @@ export function gradeCard(
   rating: Grade,
   telemetry: ReviewTelemetry,
   now: Date = new Date(),
-): { next: Flashcard; committed: Promise<void> } {
+): { next: Flashcard; reviewId: string; committed: Promise<void> } {
   const { card: scheduled, log } = scheduler.next(toFsrsCard(card), now, rating)
   const after = fromFsrsCard(scheduled)
 
@@ -188,6 +202,9 @@ export function gradeCard(
 
     cardEditedAt: card.updatedAt ?? null,
 
+    afterRollback: telemetry.afterRollback ?? false,
+    replacesReviewId: telemetry.replacesReviewId ?? null,
+
     // ts-fsrs's own ReviewLog: the card exactly as the algorithm saw it.
     before: {
       state: log.state,
@@ -212,5 +229,52 @@ export function gradeCard(
   batch.update(cardRef, { ...after })
   batch.set(reviewRef, review)
 
-  return { next: { ...card, ...after }, committed: batch.commit() }
+  return { next: { ...card, ...after }, reviewId: reviewRef.id, committed: batch.commit() }
+}
+
+/**
+ * Undo the last grade: restore the card's schedule and DELETE the review row.
+ *
+ * This is the one place in the app that destroys a review, and it is a
+ * deliberate exception to the append-only rule in DESIGN.md section 3.1,
+ * argued in 3.2. The short version: that rule protects events, and a card
+ * that broke mid-turn - the model cutting the user off, a garbled answer, a
+ * grade logged against a rating nobody gave - did not produce an event worth
+ * protecting. It produced a row that says a review happened at a moment when
+ * what actually happened was a malfunction. Keeping it would mean the FSRS
+ * optimiser fits an interval to a glitch, and every calibration number in
+ * section 6.3 carries the glitch too. Deleting it is the honest option, and
+ * it is only available because the very next thing that happens is the same
+ * card being asked again properly.
+ *
+ * Restricted to the immediately preceding grade by the caller, not by this
+ * function: one step back is a recovery, an arbitrary history rewrite is a
+ * different feature with a different argument behind it.
+ *
+ * Not batched with anything, and deliberately ordered card-first: if the
+ * delete fails, the worst outcome is an orphaned row whose schedule was rolled
+ * back, which is visible and fixable. If the restore failed and the delete
+ * landed, the card would be left on a schedule with nothing explaining it.
+ */
+export async function undoGrade(
+  uid: string,
+  before: Flashcard,
+  reviewId: string,
+): Promise<void> {
+  const cardRef = doc(cardsCollection(uid), before.id)
+  // Only the scheduling fields, exactly as gradeCard wrote them - putting the
+  // whole card back would also rewrite `updatedAt`, which means "the text
+  // changed" and would invent an edit that never happened (see types.ts).
+  await updateDoc(cardRef, {
+    due: before.due,
+    stability: before.stability,
+    difficulty: before.difficulty,
+    scheduled_days: before.scheduled_days,
+    learning_steps: before.learning_steps,
+    reps: before.reps,
+    lapses: before.lapses,
+    state: before.state,
+    last_review: before.last_review,
+  })
+  await deleteDoc(doc(collection(cardRef, 'reviews'), reviewId))
 }

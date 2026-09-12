@@ -156,6 +156,30 @@ export interface Review {
   /** The card's `updatedAt` at review time - see Flashcard.updatedAt. */
   cardEditedAt: Timestamp | null
 
+  /**
+   * This row replaced one that a rollback discarded (DESIGN.md section 3.2).
+   *
+   * The append-only rule has exactly one exception: a card that broke mid-turn
+   * produced a row describing an event that never properly happened, and
+   * keeping it would mean the optimiser fits a schedule to a glitch. The
+   * rollback deletes it and the re-run writes a clean replacement.
+   *
+   * Flagged rather than silently identical because a replacement is not quite
+   * an ordinary review either - the user has now heard the card twice, so its
+   * `durationMs` and its rating are both measured after a failed first pass.
+   * A calibration pass that wants only untouched rows can exclude these; one
+   * looking for what went wrong can find them.
+   */
+  afterRollback: boolean
+  /**
+   * The id of the discarded row, kept even though that document is gone.
+   *
+   * It is the join key to the feedback row, which was written against the
+   * original id while it still existed. Without it the only record of the
+   * failure and the only record of the retry cannot be lined up.
+   */
+  replacesReviewId: string | null
+
   before: ReviewBefore
   after: ReviewAfter
   scheduler: SchedulerSnapshot
@@ -164,7 +188,88 @@ export interface Review {
   schemaVersion: number
 }
 
+/**
+ * Unchanged at 1 by its own rule: `afterRollback` and `replacesReviewId` are
+ * additions, and no existing field means anything different because of them.
+ * A row written before they existed reads as undefined, which is honest - it
+ * predates rollback entirely and so cannot be a replacement.
+ */
 export const REVIEW_SCHEMA_VERSION = 1
+
+/**
+ * One row per piece of spoken feedback, at the TOP level in `feedback/{id}`.
+ *
+ * Deliberately not under `users/{uid}` like everything else. The point of this
+ * collection is to be read as a corpus - every failure across every user, in
+ * one query, as the raw material for the next prompt revision (DESIGN.md
+ * section 4.5). Scattered under user paths that would need a collection-group
+ * read and a rules exemption to gather; at the top level it is one query and
+ * one rule, with `uid` denormalised onto the row.
+ *
+ * The rows carry more context than the complaint itself because the complaint
+ * alone is not diagnosable. "It cut me off and got it wrong" says nothing
+ * without what the user actually said and what the model actually said back -
+ * and when the review row was rolled back, this is the ONLY surviving record
+ * that the failure happened at all.
+ */
+export interface Feedback {
+  id: string
+  /** Who reported it. Denormalised - this collection is not under a user path. */
+  uid: string
+
+  /** What the user said when asked what went wrong. */
+  transcript: string
+  /**
+   * Whether this came attached to a rollback or was volunteered on its own.
+   * A rollback means the user thought the turn was unsalvageable; standalone
+   * means the grade stood and something else was wrong.
+   */
+  kind: 'rollback' | 'standalone'
+
+  cardId: string | null
+  /**
+   * The review row this is about. For a rollback the document is already
+   * gone - the id survives here and on the replacement row's
+   * `replacesReviewId`, which is what lets the two be joined.
+   */
+  reviewId: string | null
+  /**
+   * The card's text as it stood. Cards get edited at review time by design
+   * (DESIGN.md section 4.1a), so a cardId alone can point at a different
+   * question by the time anyone reads this.
+   */
+  cardFront: string | null
+  cardBack: string | null
+
+  /**
+   * The turn as both sides actually performed it.
+   *
+   * These are the fields the collection exists for. A complaint about tone or
+   * about a garbled answer is unfalsifiable without the model's own words, and
+   * a complaint about being misjudged is unreadable without the user's.
+   *
+   * Held in memory during the turn and written ONLY when feedback fires, which
+   * is what keeps DESIGN.md section 5.1's "audio is never persisted" promise
+   * intact and costs nothing on the normal path. Audio itself stays out of
+   * scope - see section 4.5.
+   */
+  userTranscript: string | null
+  assistantTranscript: string | null
+
+  /** What produced the behaviour: enough to tell a prompt bug from a model change. */
+  realtimeModel: string
+  transcribeModel: string
+  promptVersion: string
+
+  /** Client clock, for ordering against the session the user remembers. */
+  createdAt: Timestamp
+  /** Server clock, for ordering against everyone else's rows. Null until synced. */
+  syncedAt: Timestamp | null
+
+  schemaVersion: number
+}
+
+export const FEEDBACK_SCHEMA_VERSION = 1
 
 /** Convert a stored card into the shape ts-fsrs expects. */
 export function toFsrsCard(card: SchedulingState): FsrsCard {

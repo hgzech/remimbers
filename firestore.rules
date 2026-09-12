@@ -34,6 +34,29 @@ service cloud.firestore {
       allow write: if isOwner() && email != ownEmail();
     }
 
+    // Spoken feedback from review sessions - the one collection that is NOT
+    // under a user path, because it exists to be read as a corpus across
+    // everyone (lib/feedback.ts).
+    //
+    // Create-only from the client, and only with your own uid on the row. The
+    // three things deliberately withheld:
+    //
+    //   - no read: these rows carry verbatim transcripts of what someone said
+    //     into their own flashcard app. A plain `allow read` would let every
+    //     allowlisted friend page through everyone else's. Owners read it from
+    //     the console, where the audience is one person rather than the
+    //     allowlist.
+    //   - no update: an appendable record that can be rewritten afterwards is
+    //     not evidence of anything.
+    //   - no delete: same. Withdrawing a report is a conversation, not a write.
+    //
+    // The uid check is what makes the row attributable at all. Without it a
+    // client could file complaints under someone else's uid, and the corpus
+    // driving the next prompt revision would be unfalsifiable.
+    match /feedback/{feedbackId} {
+      allow create: if isAllowed() && request.resource.data.uid == request.auth.uid;
+    }
+
     // Everything a user owns lives under their uid, so ownership is one check.
     // Note this trusts the client to write honest review data - accepted
     // deliberately for a friends-only app (see DESIGN.md section 8).

@@ -3,8 +3,10 @@ import type { ReactNode } from 'react'
 import { onSnapshot } from 'firebase/firestore'
 import { useAuth } from '../auth/AuthProvider'
 import {
+  DEFAULT_FEEDBACK_OPT_IN,
   DEFAULT_LANGUAGES,
   sanitizeLanguages,
+  saveFeedbackOptIn,
   saveLanguages,
   settingsDocRef,
 } from '../lib/settings'
@@ -19,7 +21,10 @@ type Status = 'loading' | 'needs-setup' | 'ready'
 interface SettingsState {
   status: Status
   languages: string[]
+  /** See lib/settings.ts - gates the "what went wrong?" ask, not rollback. */
+  feedbackOptIn: boolean
   save: (languages: string[]) => Promise<void>
+  saveFeedback: (optIn: boolean) => Promise<void>
 }
 
 const Ctx = createContext<SettingsState | null>(null)
@@ -28,6 +33,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const [status, setStatus] = useState<Status>('loading')
   const [languages, setLanguages] = useState<string[]>(DEFAULT_LANGUAGES)
+  const [feedbackOptIn, setFeedbackOptIn] = useState(DEFAULT_FEEDBACK_OPT_IN)
 
   useEffect(() => {
     // AuthGate only renders this tree once access is 'ok', so `user` is
@@ -42,6 +48,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         // LANGUAGES. Falling back beats sending `languages[]` with nothing in
         // it, which is auto-detect wearing a costume.
         setLanguages(stored.length ? stored : DEFAULT_LANGUAGES)
+        // Anything other than a stored `true` is off. A missing field is the
+        // normal case for every user who predates the setting, and the safe
+        // reading of an absent consent is that it was never given.
+        setFeedbackOptIn(snap.data().feedbackOptIn === true)
         setStatus('ready')
         return
       }
@@ -58,6 +68,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const value: SettingsState = {
     status,
     languages,
+    feedbackOptIn,
     save: async (next) => {
       if (!user) throw new Error('not signed in')
       // Optimistic: the snapshot will confirm, but with offline persistence
@@ -65,6 +76,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setLanguages(sanitizeLanguages(next))
       setStatus('ready')
       await saveLanguages(user.uid, next)
+    },
+    saveFeedback: async (optIn) => {
+      if (!user) throw new Error('not signed in')
+      setFeedbackOptIn(optIn)
+      await saveFeedbackOptIn(user.uid, optIn)
     },
   }
 
@@ -80,4 +96,9 @@ export function useSettings(): SettingsState {
 /** The languages to pin on a transcription request. */
 export function useLanguages(): string[] {
   return useSettings().languages
+}
+
+/** Whether a review session may ask what went wrong. See lib/settings.ts. */
+export function useFeedbackOptIn(): boolean {
+  return useSettings().feedbackOptIn
 }

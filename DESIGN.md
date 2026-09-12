@@ -17,6 +17,8 @@
 | Grading | LLM judges correct/incorrect; **user picks the difficulty** | Sidesteps LLM leniency (§4.3) |
 | Text review | **Included** | It *is* Phase 2 — free by construction (§4.4) |
 | Review log | **Schema fixed before the UI**; stores its own FSRS replay state | Rows survive reparameterisation, card deletion, and card edits (§3.1) |
+| Rollback | **One card back; the discarded row is deleted, not annotated** | The single exception to append-only (§3.2) |
+| Feedback | **Opt-in; transcripts held in memory, written only on a report** | Audio stays unpersisted; failures become a corpus (§4.5) |
 | Fraud | Accepted | No server-side grade validation |
 
 ---
@@ -153,6 +155,50 @@ Four of those took an argument, and the arguments are the point:
 
 **Why keep the note?** Cards are derived data. Keeping `rawText` means you can regenerate the whole deck when you improve the generation prompt, and it gives the grading model context ("the source said…"). Treat notes as source and cards as build output.
 
+#### 3.2 Rollback: the one exception to append-only
+
+*Added 12 Sep 2026, from a live session that went wrong.*
+
+A card failed in several ways at once. The model interrupted mid-answer and
+judged it incorrect; the spoken correct answer came back garbled; a repeated
+request to hear it again was ignored; and the session advanced to the next card
+without ever collecting a rating. What landed in Firestore was a review row
+saying the card was answered at that moment, rated, and rescheduled.
+
+That row is the problem this section exists for, and §3.1's rule — *a review is
+an event, and events are not deleted* — is what makes it awkward. The resolution
+is that the rule is right and the row is not an event. §3.1 protects reviews
+because they happened, in a state that no longer exists, and nothing recreates
+them. A turn where the model talked over the user and logged a rating nobody
+gave did not produce a record of a review; it produced a record of a
+malfunction, wearing the schema of a review. Keeping it means the FSRS optimiser
+fits an interval to a glitch, and §6.3's calibration number counts a verdict the
+user never got to answer.
+
+So: **a rollback deletes the original row, and the re-run writes a clean
+replacement.** Three constraints keep that from being a licence to rewrite
+history:
+
+- **One card back, never further.** Recovering the card that just broke is a
+  repair. An arbitrary undo stack would need a much stronger argument than this
+  one, and does not have it.
+- **The replacement is flagged** (`afterRollback`, and `replacesReviewId`
+  carrying the dead row's id). A replacement is not quite an ordinary review
+  either: the user has now heard the card twice, so its `durationMs` and its
+  rating are both measured after a failed first pass. An analysis that wants
+  untouched rows can exclude them; one looking for trouble can find them.
+- **The failure is not discarded with the row.** The deleted row was the only
+  record that anything went wrong, which is exactly why §4.5's feedback row
+  exists and why it carries the turn's transcripts. `replacesReviewId` is the
+  join key between the two — the feedback row was written against an id that no
+  longer resolves to anything, deliberately.
+
+The user-facing half is one sentence: **it is voice-triggered.** "Something went
+wrong there, go back." In an app whose whole premise is that your hands are
+busy, a recovery that needs a button is a recovery that does not exist — and the
+moment you most want it is the moment you are most annoyed, which is the worst
+possible time to ask someone to look at a screen.
+
 ### Due-card query
 
 ```ts
@@ -267,6 +313,68 @@ You asked whether the text fallback is cheap to add. It's cheaper than that — 
 That ordering is deliberate. Phase 2 gives you a working Anki with four buttons, usable daily, generating the review history that makes Phase 4 worth having. When the realtime layer arrives it sits on top as an alternative presenter, and the button UI remains as the fallback for: no signal, no privacy to talk aloud, a dead mic, a hit daily cost cap, or a 60-card backlog where conversation is just slow.
 
 Which is the real point: voice rehearsal is delightful for ten cards and tedious for sixty. Text mode isn't a degraded path, it's the right tool for a different session.
+
+### 4.5 Feedback capture: what the transcripts are for
+
+*Added 12 Sep 2026, alongside §3.2.*
+
+A rollback recovers the card. It does not tell anyone what went wrong, and the
+row that might have said was just deleted. So the second half of the same
+mechanism: **the session can ask, and log the answer.**
+
+Two entry points, both spoken. Attached to a rollback — after the undo, the
+model asks "what went wrong there?" once, records the reply, and only then
+re-asks the card. And standalone, for when the grade was fine but something else
+was not ("you sounded impatient", "you read that far too fast"); the session
+logs it and carries on where it was.
+
+**What a row has to carry to be worth having.** The complaint alone is not
+diagnosable. "It cut me off and got it wrong" names no card, no answer and no
+model output; a complaint about tone is unfalsifiable without the model's own
+words. So each row carries the spoken feedback, the card (id *and* text, since
+cards get edited at review time by §4.1a), the review id if one existed, the
+model/prompt versions, and — the fields the collection exists for — **both sides
+of the turn as transcript.**
+
+**Which collides with §5.1, and the collision has a clean resolution.**
+Transcripts are not persisted today, and "audio is never persisted" is a promise
+worth keeping literally. The fix is to hold the last turn's transcripts in
+memory until the next card begins, and write them **only if feedback fires.** On
+the normal path nothing is stored and nothing is sent; the cost is zero and the
+promise is untouched. The transcripts are text the session already had in hand.
+
+**Opt-in, and the opt-in is real.** Off by default, asked for in Settings, and
+it gates only the asking — rollback works for everyone, because a repair to your
+own deck involves no new data anywhere. With the setting off the feedback tool
+is not offered to the model at all, rather than offered and refused: a tool in
+the list is a tool that gets reached for eventually, and "I'd log that but I'm
+not allowed" is a worse experience than never being asked.
+
+**Audio is deliberately out of scope, and this was a real argument.** The case
+for it is not weak: garbled TTS output looks perfectly fine in a transcript, so
+the single failure that started all this is the one a transcript cannot explain.
+Against it: if the fix loop only ever feeds transcripts to a model, the audio
+buys nothing but a Storage bucket and a retention policy in an app that
+currently needs neither (§5.1). So — not now. If a failure turns up that
+transcripts genuinely cannot explain, add it *then*, as a narrow exception:
+explicit feedback trigger only, that one turn only, a separate debug collection,
+with a retention window. What must not happen is the general guarantee being
+weakened to cover a case nobody has hit yet.
+
+**Why a corpus rather than fixing them as they arrive.** This is the whole point
+of collecting anything. Patching prompt failures one at a time overfits: you fix
+the interruption and the model gets timid, you fix the timidity and it starts
+talking over people again, and with no corpus neither regression is visible
+until someone complains a second time. A list of real failures gets addressed as
+a set, once, with the evals re-run against all of them.
+
+That also names a gap. `evals/` covers the *generation* prompt and nothing else
+— the rehearsal prompt in `VoiceReview.tsx`, which is now the longest and most
+argued-over prompt in the app, has no eval harness at all. The same objection
+`evals/README.md` makes about its own corpus being 18/20 synthetic applies here
+with more force, because the review corpus is 0/0. Real logged failures are the
+honest seed for it: they are, by construction, cases that actually happened to
+someone.
 
 ---
 
@@ -526,7 +634,11 @@ The v0.1 questions are answered in the decisions log. What remains:
 2. **Does the realtime model do the judging, or a text model?** Now a much smaller question than in v0.1, since it's only a binary. Start with the realtime model — one round trip, cheapest — and let §6.3's data decide whether to move it.
 3. **Daily cost cap: what number?** §7 needs a concrete ceiling on minted realtime tokens before anyone else is invited. Easier to pick after you've seen a week of your own sessions.
 4. **Which tier is the default, and does an uncued note go straight into rotation?** §6.5 and §6.6 disagree with each other's instincts here, and the tiebreaker is data Phase 3 will produce: how often you actually cue, and whether the deck is mostly trivia with grammar on the side or the reverse.
-5. **Do you want the daily-due push notification?** iOS supports it for installed PWAs, and it's arguably the one place Remimbers should behave like a reminders app. Not needed before Phase 4.
+5. **How much feedback is enough to revise on?** §4.5 argues for batching rather
+   than patching, which needs a number, or at least a trigger: revise when there
+   are ten rows, or when two describe the same failure, or monthly. Picking one
+   after the first handful arrive beats picking one now.
+6. **Do you want the daily-due push notification?** iOS supports it for installed PWAs, and it's arguably the one place Remimbers should behave like a reminders app. Not needed before Phase 4.
 
 ---
 

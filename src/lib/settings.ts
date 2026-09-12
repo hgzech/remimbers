@@ -88,7 +88,26 @@ export const MAX_LANGUAGES = 4
 
 export interface UserSettings {
   languages: string[]
+  feedbackOptIn: boolean
 }
+
+/**
+ * Whether the review session may ask what went wrong, and log it.
+ *
+ * Off by default, and the default is the whole point. This is the one setting
+ * that changes what LEAVES the device: with it on, a turn's transcripts - the
+ * user's answer and the model's reply - can be written to a shared collection
+ * that the app's owner reads (lib/feedback.ts). Nothing about that is sinister,
+ * but it is not what a user assumes a flashcard app does, so it is asked for
+ * rather than assumed.
+ *
+ * It gates capture, not recovery. Rollback works for everyone - it is a repair
+ * to your own deck and involves no new data anywhere. Only the "can you tell me
+ * what went wrong?" step, and the feedback tool behind it, are withheld. Opting
+ * out therefore costs the user nothing they would notice, which is what a
+ * consent question has to be true of to be honest.
+ */
+export const DEFAULT_FEEDBACK_OPT_IN = false
 
 export function settingsDocRef(uid: string) {
   return doc(db, 'users', uid, 'settings', 'prefs')
@@ -110,6 +129,14 @@ export function sanitizeLanguages(value: unknown): string[] {
     if (out.length === MAX_LANGUAGES) break
   }
   return out
+}
+
+export async function saveFeedbackOptIn(uid: string, optIn: boolean): Promise<void> {
+  await setDoc(
+    settingsDocRef(uid),
+    { feedbackOptIn: optIn, updatedAt: serverTimestamp() },
+    { merge: true },
+  )
 }
 
 export async function saveLanguages(uid: string, languages: string[]): Promise<void> {
