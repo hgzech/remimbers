@@ -334,7 +334,6 @@ export function VoiceReview() {
   const sessionRef = useRef<RealtimeSession | null>(null)
   const queueRef = useRef<Flashcard[]>([])
   const itemIdsRef = useRef<string[]>([])
-  const pendingTranscriptRef = useRef<string | null>(null)
   const cardShownAtRef = useRef(0)
   const gradedCallIdsRef = useRef<Set<string>>(new Set())
   /** Whether the current card's answer has been handed over yet - see injectCard. */
@@ -442,7 +441,6 @@ export function VoiceReview() {
       // them (a feedback row mid-flight) has already copied what it wants into
       // feedbackContextRef - see handleRollback.
       turnRef.current = emptyTurn(card.id)
-      pendingTranscriptRef.current = null
       sendSystemText(
         `New card. cardId: "${card.id}"\n` +
           `Question (front): ${card.front}\n` +
@@ -611,7 +609,20 @@ export function VoiceReview() {
           // Voice mode has no discrete "reveal" moment - the model paces that.
           revealMs: null,
           llmJudgedCorrect: typeof args.judgedCorrect === 'boolean' ? args.judgedCorrect : null,
-          userAnswerTranscript: pendingTranscriptRef.current,
+          // The FIRST thing the user said on this card - the retrieval attempt.
+          //
+          // This used to be the LAST transcription event to arrive, which on a
+          // normal card is the spoken rating: every voice review since
+          // transcription was switched on logged "Good" where the answer
+          // belonged, quietly defeating the one field DESIGN.md section 3.1
+          // keeps to explain why a card keeps failing. REVIEW_SCHEMA_VERSION is
+          // 2 from here, so the two populations stay tellable apart.
+          //
+          // Not infallible: a user who opens with "sorry, say that again?" puts
+          // that in the slot instead. Left alone deliberately - any heuristic
+          // for "is this really an answer" would be wrong in cases nobody can
+          // audit later, and being wrong invisibly is what this is fixing.
+          userAnswerTranscript: turnRef.current.user[0] ?? null,
           llmRationale: typeof args.rationale === 'string' ? args.rationale : null,
           afterRollback: replacing !== null,
           replacesReviewId: replacing,
@@ -619,7 +630,6 @@ export function VoiceReview() {
         now,
       )
       committed.catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      pendingTranscriptRef.current = null
 
       // Ack the tool call so the model isn't left waiting on it.
       replyToTool(item.call_id, { ok: true })
@@ -867,12 +877,11 @@ export function VoiceReview() {
           }
           break
         case 'conversation.item.input_audio_transcription.completed': {
+          // Every utterance is kept, in order. A card draws at least two - the
+          // answer, then the spoken rating - and which one is which is the
+          // whole reason this is a list rather than one slot (see below, and
+          // TurnTranscript).
           const transcript = event.transcript ?? null
-          pendingTranscriptRef.current = transcript
-          // Kept per card as well as per turn: the answer and the rating reply
-          // arrive as separate transcription events, and a feedback row about
-          // "it judged me wrong" needs the answer, not the word "Good" that
-          // happened to be said last.
           if (typeof transcript === 'string' && transcript.trim()) {
             turnRef.current.user.push(transcript.trim())
           }

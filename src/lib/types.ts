@@ -130,6 +130,11 @@ export interface Review {
 
   /** The grader's binary verdict, or null when no grader ran. Never false-as-unknown. */
   llmJudgedCorrect: boolean | null
+  /**
+   * What the user said when they answered - their first utterance on the card,
+   * not their last. See REVIEW_SCHEMA_VERSION: rows at schemaVersion 1 hold the
+   * spoken rating here instead, and cannot be repaired.
+   */
   userAnswerTranscript: string | null
   llmRationale: string | null
 
@@ -189,12 +194,27 @@ export interface Review {
 }
 
 /**
- * Unchanged at 1 by its own rule: `afterRollback` and `replacesReviewId` are
- * additions, and no existing field means anything different because of them.
- * A row written before they existed reads as undefined, which is honest - it
- * predates rollback entirely and so cannot be a replacement.
+ * 2 as of 12 Sep 2026, and this is what the field is for.
+ *
+ * `userAnswerTranscript` did not change its meaning on paper - it was always
+ * the user's answer. It changed what it CONTAINED. Voice mode wrote whichever
+ * transcription arrived last, which on any card that reached a rating is the
+ * spoken rating: "Good" sitting in the slot reserved for the retrieval attempt.
+ * Nothing about the row said so, which is exactly the failure a schema version
+ * exists to prevent - an analysis of why cards fail would have read a column of
+ * rating words and drawn conclusions from it.
+ *
+ * So: rows at 1 mean "the last thing the user said on this card", rows at 2
+ * mean "the answer they gave". Old rows are not repairable - the audio is gone
+ * by design (DESIGN.md 5.1) and the transcripts were never stored - so the only
+ * honest thing available is to make them identifiable and exclude them.
+ *
+ * `afterRollback` and `replacesReviewId`, added in the same change, did NOT
+ * warrant a bump on their own: they are additions, and a row written before
+ * they existed reads as undefined, which is honest - it predates rollback and
+ * so cannot be a replacement.
  */
-export const REVIEW_SCHEMA_VERSION = 1
+export const REVIEW_SCHEMA_VERSION = 2
 
 /**
  * One row per piece of spoken feedback, at the TOP level in `feedback/{id}`.
