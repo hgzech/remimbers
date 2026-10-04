@@ -1,6 +1,8 @@
 # Remimbers — Design Notes
 
-*v0.5 — 21 Aug 2026. Thinking document, not a spec.*
+*v0.6 — 4 Oct 2026. Thinking document, not a spec.*
+
+*v0.6 changes: the model names now match the code (the full `gpt-realtime-2.1`, not `-mini`), and §9 records phases 3–4 as built and stops prescribing an order for the rest. Status and backlog live in Hilmar's working notes, outside the repo.*
 
 ## Decisions log
 
@@ -55,8 +57,8 @@ The corollary: **capture must never block on the network or on an LLM.** Speak �
         ▼                         ▼
 ┌──────────────────┐      ┌────────────────────┐
 │ Firebase         │      │ OpenAI Realtime    │
-│ Auth / Firestore │      │ gpt-realtime-2.1-  │
-│ Rules            │      │ mini               │
+│ Auth / Firestore │      │ gpt-realtime-2.1   │
+│ Rules            │      │                    │
 └────────▲─────────┘      └────────────────────┘
          │
 ┌────────┴──────────────────────────────────────┐
@@ -273,7 +275,7 @@ Which is better than clarifying at capture, not merely cheaper. At capture you'r
 
 ### 4.2 Rehearsal conversation *(browser ↔ Realtime API, WebRTC)*
 
-`gpt-realtime-2.1-mini`. Flow:
+`gpt-realtime-2.1` — the full model. This section originally planned `-mini`; the build started with the full model for quality and may step down once the cost is visible (§7). Flow:
 
 1. Browser → `/api/realtime-token`; the Function POSTs to `https://api.openai.com/v1/realtime/client_secrets` with the real key and returns a short-lived client secret.
 2. Browser opens an `RTCPeerConnection`, adds the mic track, POSTs the SDP offer to `https://api.openai.com/v1/realtime/calls` with the ephemeral token.
@@ -588,9 +590,9 @@ The Firebase side is free-tier noise. OpenAI is the whole bill.
 |---|---|---|---|
 | Transcription | `gpt-transcribe` | $0.0045/min | ~$0.70 |
 | Card generation | `gpt-5.6-luna` class | $0.10/$0.60 per 1M | ~$0.20 |
-| **Rehearsal** | `gpt-realtime-2.1-mini` | **$0.02–0.08/min** | **$6–25** |
+| **Rehearsal** | `gpt-realtime-2.1-mini` (planned) | **$0.02–0.08/min** | **$6–25** |
 
-A 10-minute voice session runs **$0.30–0.80**. Daily, that's **$9–24/month per user** — the dominant cost by an order of magnitude, and it scales linearly with friends. The full `gpt-realtime-2.1` model is ~3× that; don't reach for it without evidence you need it.
+A 10-minute voice session runs **$0.30–0.80**. Daily, that's **$9–24/month per user** — the dominant cost by an order of magnitude, and it scales linearly with friends. The full `gpt-realtime-2.1` model is ~3× that. **As built, the app uses the full model** (`functions/src/realtime.ts`), so real rehearsal cost is roughly 3× the row above until it steps down to `-mini`.
 
 Three controls, all worth building before you invite anyone:
 
@@ -635,14 +637,16 @@ The ordering principle: **the app should be genuinely useful before any of the f
 | **0** | Vite + React + TS skeleton, Google auth + allowlist, text capture, Firestore rules, Pages deploy | Plumbing works end to end ✅ |
 | **1** | **Text** capture → LLM → cards → library view with edit/delete ✅ | **Card quality.** The riskiest assumption, tested cheapest. If the LLM writes bad cards, nothing downstream matters |
 | **2** | FSRS + classic review UI with manual Again/Hard/Good/Easy buttons | You now have a working Anki. Usable daily. Start accumulating real review data ✅ |
-| **3** | Voice capture: MediaRecorder → transcribe → note, PWA install, offline queue | The actual product thesis — is capture fast enough that you use it? |
-| **4** | Realtime rehearsal, tool-call grading, confirm step, cost caps | The differentiator |
+| **3** | Voice capture: MediaRecorder → transcribe → note, PWA install, offline queue | The actual product thesis — is capture fast enough that you use it? ✅ |
+| **4** | Realtime rehearsal, tool-call grading, confirm step, cost caps | The differentiator ✅ except the cost cap and conversational card repair (§4.1a) |
 | **5** | FSRS parameter optimisation on your own review log; grader calibration review | Compounding quality |
 | **6** | Retention tiers from voice cues + steady-state load forecast (§6.5, §6.6) | Sustainability — keeping the habit inside five minutes a day |
 
 Phase 1 is deliberately first. Paste in twenty notes of the kind you'd actually speak, look hard at the cards, and iterate the prompt until they're good. That prompt is the product; everything else is scaffolding around it.
 
 Phase 2 gives you something worth opening every day, which matters: you need real cards and real review history before the Phase 4 conversation has anything interesting to work with.
+
+**As of v0.6 the table is history rather than a plan.** Phases 0–4 describe the order the app was built in. What remains (Phase 5, Phase 6, the cost cap, card repair) is picked from a backlog as it becomes interesting, not worked through in sequence. The ordering arguments below still matter, but as *dependencies*, not a schedule: fitting FSRS needs a few hundred to ~1,000 of your own reviews; the load forecast needs fitted parameters; retention tiers need nothing; the cost cap has to precede any invitation.
 
 Phase 6 is last for two reasons, both in §6.5: re-tiering is retroactively free, so nothing is lost by shipping everything at 90% first, and the forecast is only honest once Phase 5 has fitted parameters and enough reviews to measure real per-tier seconds from. Building it earlier would mean guessing at both.
 

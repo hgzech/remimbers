@@ -2,7 +2,21 @@
 
 Voice-capture spaced-repetition PWA. Static SPA (Vite + React 19 + TS) on GitHub
 Pages at https://hgzech.github.io/remimbers/, Firestore + Cloud Functions behind it.
-Design doc: `DESIGN.md` (kept in sync with the copy in ~/Nextcloud/Remimbers/).
+Design doc: `DESIGN.md`, in this repo only (the old Nextcloud copy is retired).
+
+## Working notes and how to work with Hilmar
+
+Status, backlog, the code-cleanup list and explanations live in Hilmar's
+Obsidian vault at `/Users/hilmarzech/Notes/Remimbers/` (start at `Remimbers.md`),
+reachable through Desktop Commander. Rule of thumb: a design decision and its
+reasoning goes in `DESIGN.md`; what's next, what's broken and what was learned
+goes in the notes. Write plain markdown with `[[wikilinks]]`; avoid `- [ ]`
+checkboxes for backlog ideas, because the vault collects those into Hilmar's
+weekly todo list.
+
+Hilmar wants to understand what is being built, not only receive it. Explain
+what you are doing and why as you go, in plain terms, and when something
+non-obvious comes up, add a short explanation to `Concepts.md` in the notes.
 
 ## Git — Claude can push
 

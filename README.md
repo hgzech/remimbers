@@ -8,8 +8,10 @@ repetition algorithm says you're about to forget it.
 
 See [`DESIGN.md`](./DESIGN.md) for the architecture and the reasoning behind it.
 
-**Status: Phase 1** — notes are turned into flashcards by a Cloud Function; the
-library shows them and lets you fix or delete them.
+**Status:** in daily use. Voice capture, LLM card generation, FSRS scheduling,
+and voice review (with text review as a fallback) all work. Current status,
+backlog and working notes live outside the repo, in Hilmar's notes; the design
+rationale lives in `DESIGN.md`.
 
 ---
 
@@ -175,28 +177,19 @@ feel slow.
 
 ```
 src/
-  lib/        firebase init, env, data model, note + card helpers
+  lib/        firebase init, env, data model, and helpers for notes, cards,
+              review/FSRS, transcription queue, realtime session, settings,
+              feedback, allowlist
   auth/       AuthProvider (session + allowlist) and AuthGate
-  routes/     Capture, Review, Library
-  components/ Layout with bottom nav
+  settings/   SettingsProvider and the first-run language gate
+  routes/     Capture, Review (text) + VoiceReview, Library, Settings, Admin
+  components/ Layout with bottom nav, LanguagePicker
 functions/
   src/
-    prompt.ts    the note → cards prompt. The Phase 1 deliverable
-    generate.ts  one POST to the Responses API, plus sanitising
-    index.ts     the trigger, the dry-run endpoint, CORS and auth
-evals/        prompt eval corpus and console runner — see evals/README.md
+    prompt.ts      the note -> cards prompt
+    generate.ts    one POST to the Responses API, plus sanitising
+    transcribe.ts  audio -> text, pinned to the user's languages
+    realtime.ts    mints short-lived tokens for voice review
+    index.ts       the trigger, the HTTP endpoints, CORS and auth
+evals/        prompt eval corpus and console runner, see evals/README.md
 ```
-
-## Roadmap
-
-| Phase | What | Status |
-|---|---|---|
-| 0 | Skeleton, auth, text capture, deploy | ✅ |
-| 1 | Note → cards via LLM, auto-accepted | ✅ |
-| 2 | FSRS + text review (Again/Hard/Good/Easy) | |
-| 3 | Voice capture, PWA install, offline queue | |
-| 4 | Realtime voice rehearsal + conversational grading | |
-| 5 | FSRS parameter optimisation, grader calibration | |
-
-Phase 2 is the point where this becomes usable daily. Phase 4 is the
-differentiator, and Phase 2's UI stays on as its text fallback.
