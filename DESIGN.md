@@ -1,6 +1,8 @@
 # Remimbers — Design Notes
 
-*v0.6 — 4 Oct 2026. Thinking document, not a spec.*
+*v0.7 — 20 Oct 2026. Thinking document, not a spec.*
+
+*v0.7 changes: §3.2 splits the single voice rollback into **restart current card** (the default, deletes nothing) and **go back to previous card** (explicit only), after the single action turned out to undo the wrong card in the common case; §4.5 follows. Text review gains an undo for the last grade.*
 
 *v0.6 changes: the model names now match the code (the full `gpt-realtime-2.1`, not `-mini`), and §9 records phases 3–4 as built and stops prescribing an order for the rest. Status and backlog live in Hilmar's working notes, outside the repo.*
 
@@ -19,7 +21,7 @@
 | Grading | LLM judges correct/incorrect; **user picks the difficulty** | Sidesteps LLM leniency (§4.3) |
 | Text review | **Included** | It *is* Phase 2 — free by construction (§4.4) |
 | Review log | **Schema fixed before the UI**; stores its own FSRS replay state | Rows survive reparameterisation, card deletion, and card edits (§3.1) |
-| Rollback | **Confirmed out loud; one card back; the discarded row is deleted, not annotated** | The single exception to append-only (§3.2) |
+| Recovery | **Restart current card by default (deletes nothing); go back one card only when named, confirmed, the discarded row deleted** | Go-back is the single exception to append-only (§3.2) |
 | Feedback | **Opt-in; transcripts held in memory, written only on a report** | Audio stays unpersisted; failures become a corpus (§4.5) |
 | Fraud | Accepted | No server-side grade validation |
 
@@ -161,7 +163,7 @@ Four of those took an argument, and the arguments are the point:
 
 #### 3.2 Rollback: the one exception to append-only
 
-*Added 12 Sep 2026, from a live session that went wrong.*
+*Added 12 Sep 2026, from a live session that went wrong. Split into two actions on 20 Oct 2026 — see "Two recoveries, not one" at the end of this section. Below, "rollback" means what is now **going back to the previous card**.*
 
 A card failed in several ways at once. The model interrupted mid-answer and
 judged it incorrect; the spoken correct answer came back garbled; a repeated
@@ -217,6 +219,83 @@ thinks happened. A model arguing about whether its own turn went wrong is the
 behaviour that made the original failure infuriating rather than merely
 annoying, and it is in no position to judge: it did not hear what the user
 heard.
+
+**Two recoveries, not one** *(20 Oct 2026, from using it)*
+
+Everything above was written about one specific failure: the session moved on
+and logged a grade the user never gave. The tool built for it,
+`rollback_card`, therefore always meant *undo the last card that was graded*.
+In practice that was the less common case. What usually happens is that
+something breaks on the card **in flight** — most often while the rating is
+being asked or confirmed — and that card has not been graded yet. So "that went
+wrong" undid the card *before* it: a perfectly good row deleted, a card nobody
+complained about asked again, and the broken one carrying on as if nothing had
+happened. Exactly the "fit an interval to a glitch" damage this section exists
+to prevent, done by the repair.
+
+The model could not have avoided it. History is cleared between cards (§4.2),
+so the model only ever sees the card it is on. Asking it which card "that"
+referred to was asking it about something it has no record of.
+
+So there are two actions now, and the split follows what each one costs:
+
+| | **Restart current card** (`restart_card`) | **Go back to previous card** (`go_back_to_previous_card`) |
+|---|---|---|
+| When | The default, whenever something went wrong | Only when the user names it — "the last one", "go back" |
+| Review log | Nothing to undo — no row exists yet | Previous row deleted; card's FSRS state restored from the pre-grade snapshot |
+| Confirmation | None — at most "what went wrong?" (feedback opt-in only) | Asked once, unless said outright |
+| Mark on the eventual row | `restartCount` (how many restarts) | `afterRollback` + `replacesReviewId` |
+| Feedback row `kind` | `'restart'`, `reviewId` null | `'rollback'` (name kept), `reviewId` = the dead row |
+
+**Restart is the default because it is the action whose mistakes are free.** A
+needless restart costs one repeated question. A needless go-back deletes a true
+review. When a system has to guess, it should guess the reversible thing — and
+here the default also happens to match what the model can actually see.
+
+**Restart needs no confirmation**, and that follows from the argument above
+rather than contradicting it: the confirmation existed because the action
+deleted a row. With feedback opted in, the model still asks one question —
+"what went wrong?" — but for the feedback row, not as an "are you sure".
+
+**A restarted card's row is marked, not hidden.** `restartCount` is the only
+trace a restart leaves on the log, and it matters for the same reason
+`afterRollback` does: the user has heard the card at least twice, and the model
+has often said the answer aloud before things went wrong, so the rating that
+follows is not a clean first retrieval. An analysis that wants clean rows can
+exclude `restartCount > 0`; rows from before this change have no field at all,
+which is honest — they predate restarts.
+
+**The one genuinely ambiguous moment gets a question, not a default.** Right
+after a grade, before the user has answered the new card, "something went
+wrong" is a coin-flip: it may be the app having moved on too early (the case
+go-back was built for) or the new question arriving garbled. Neither the model
+nor the code can tell. So that card — and only that card — is injected with a
+note telling the model to ask "This one, or the last one?" and treat the answer
+as the confirmation. Once the user has answered the new card, restart is the
+default again.
+
+**A recovery in the same turn as a grade wins, and the grade is refused.** A
+model that calls `record_grade` and a recovery together is not sure the card
+went right — usually a rating was half-said when the user objected. Acting on
+the grade first would advance the queue, and the restart would then land on the
+*next* card: the original bug by another route. Only one recovery is acted on
+per turn (restart over go-back, as the non-destructive one); every other call
+in that turn gets a `not done` reply so the model is never left holding a
+dangling call.
+
+**Text mode has only one of the two, deliberately.** Nothing can go wrong
+mid-card there that the user did not tap themselves, so there is no "restart".
+What does happen is a mis-tapped grade button — a rating nobody meant, logged as
+though they had — so text review gets an **Undo** for the last grade, with the
+same mechanics and the same flags as voice's go-back.
+
+**Feedback rows from before the split need care.** Every `'rollback'` row with
+a `promptVersion` before `2026-10-20.1` came from the single old action, which
+always undid the previous card — including, probably most of the time, when the
+complaint was about the current one. Their transcripts are the *previous*
+card's turn, and the complaint may be about a card they do not show. Some of the
+review rows those rollbacks deleted were real reviews; they are not recoverable,
+but their replacements are findable (`afterRollback == true`, before 20 Oct).
 
 ### Due-card query
 
@@ -337,20 +416,21 @@ Which is the real point: voice rehearsal is delightful for ten cards and tedious
 
 *Added 12 Sep 2026, alongside §3.2.*
 
-A rollback recovers the card. It does not tell anyone what went wrong, and the
-row that might have said was just deleted. So the second half of the same
-mechanism: **the session can ask, and log the answer.**
+A recovery repairs the card. It does not tell anyone what went wrong — and
+after a go-back, the row that might have said was just deleted. So the second
+half of the same mechanism: **the session can ask, and log the answer.**
 
-Two entry points, both spoken. **Attached to a rollback**, where it rides along
-on the confirmation §3.2 already asks for: "Want to do that one again — what
-went wrong?" is one question, and the answer to both halves arrives in one
-reply, which then travels as an argument on the rollback itself. Asking
+Two entry points, both spoken. **Attached to a recovery** (§3.2), where it rides
+along as an argument on the tool call itself. For a restart, the one question
+asked is "what went wrong?"; for a go-back it shares the confirmation §3.2
+already asks for — "Go back to the previous card — what went wrong?" is one
+question, and the answer to both halves arrives in one reply. Asking
 separately, after the undo, would mean asking someone to explain themselves
 immediately after they complained about not being listened to. If they confirm
 without explaining, that is an answer too and is not asked about twice. And
 **standalone**, for when the grade was fine but something else was not ("you
 sounded impatient", "you read that far too fast"); the session logs it and
-carries on where it was, undoing nothing.
+carries on where it was, redoing nothing.
 
 **What a row has to carry to be worth having.** The complaint alone is not
 diagnosable. "It cut me off and got it wrong" names no card, no answer and no
@@ -368,7 +448,7 @@ the normal path nothing is stored and nothing is sent; the cost is zero and the
 promise is untouched. The transcripts are text the session already had in hand.
 
 **Opt-in, and the opt-in is real.** Off by default, asked for in Settings, and
-it gates only the asking — rollback works for everyone, because a repair to your
+it gates only the asking — both recoveries work for everyone, because a repair to your
 own deck involves no new data anywhere. With the setting off the feedback tool
 is not offered to the model at all, rather than offered and refused: a tool in
 the list is a tool that gets reached for eventually, and "I'd log that but I'm
