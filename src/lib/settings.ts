@@ -101,7 +101,7 @@ export interface UserSettings {
  * but it is not what a user assumes a flashcard app does, so it is asked for
  * rather than assumed.
  *
- * It gates capture, not recovery. Rollback works for everyone - it is a repair
+ * It gates capture, not recovery. Restart and go-back work for everyone - a repair
  * to your own deck and involves no new data anywhere. Only the "can you tell me
  * what went wrong?" step, and the feedback tool behind it, are withheld. Opting
  * out therefore costs the user nothing they would notice, which is what a

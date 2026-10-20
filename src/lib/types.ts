@@ -184,6 +184,18 @@ export interface Review {
    * failure and the only record of the retry cannot be lined up.
    */
   replacesReviewId: string | null
+  /**
+   * How many times this card was restarted in the turn that produced this row
+   * (DESIGN.md section 3.2). 0 for an ordinary answer, and always 0 in text
+   * mode. Undefined on rows from before Oct 2026, which predate restarts.
+   *
+   * A restart deletes nothing - the card had no row yet - so this is the only
+   * trace one leaves on the log. It matters for the same reason afterRollback
+   * does: the user has heard the card more than once, and the model has often
+   * already said the answer before things went wrong, so the rating here is
+   * not a clean first retrieval.
+   */
+  restartCount?: number
 
   before: ReviewBefore
   after: ReviewAfter
@@ -240,16 +252,28 @@ export interface Feedback {
   /** What the user said when asked what went wrong. */
   transcript: string
   /**
-   * Whether this came attached to a rollback or was volunteered on its own.
-   * A rollback means the user thought the turn was unsalvageable; standalone
-   * means the grade stood and something else was wrong.
+   * What the feedback came attached to (DESIGN.md sections 3.2 and 4.5):
+   *
+   * - 'restart': the card in flight went wrong and was started again. No
+   *   review row existed, so reviewId is null; the re-run's row (same cardId,
+   *   restartCount > 0, written just after this) is the one it is about.
+   * - 'rollback': the user went back to the PREVIOUS card, whose row was
+   *   deleted. reviewId is that dead row; the replacement carries it as
+   *   replacesReviewId. Name kept from before the Oct 2026 split.
+   * - 'standalone': nothing was redone; something else was wrong.
+   *
+   * Caution on 'rollback' rows from before promptVersion 2026-10-20.1: there
+   * was only one recovery then, and it always undid the previous card - even
+   * when the complaint was about the current one, which was the usual case.
+   * Their transcripts are the previous card's turn, and the complaint may be
+   * about a card they do not show.
    */
-  kind: 'rollback' | 'standalone'
+  kind: 'restart' | 'rollback' | 'standalone'
 
   cardId: string | null
   /**
-   * The review row this is about. For a rollback the document is already
-   * gone - the id survives here and on the replacement row's
+   * The review row this is about, if one existed. For a rollback the
+   * document is already gone - the id survives here and on the replacement row's
    * `replacesReviewId`, which is what lets the two be joined.
    */
   reviewId: string | null

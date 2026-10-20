@@ -150,6 +150,8 @@ export interface ReviewTelemetry {
    */
   afterRollback?: boolean
   replacesReviewId?: string | null
+  /** Restarts of this card before this answer. See types.ts. */
+  restartCount?: number
 }
 
 /**
@@ -165,7 +167,7 @@ export interface ReviewTelemetry {
  * promise only settles on server acknowledgement, which may be tomorrow. The
  * caller advances on `next` and merely reports failures from `committed`.
  *
- * `reviewId` comes back for one reason: a voice session may have to undo this
+ * `reviewId` comes back for one reason: the session may have to undo this
  * (undoGrade, below), and the id is generated here. Returning it beats having
  * the caller re-query for the row it just wrote - offline, that query would
  * be answered from cache and the caller would be guessing.
@@ -204,6 +206,7 @@ export function gradeCard(
 
     afterRollback: telemetry.afterRollback ?? false,
     replacesReviewId: telemetry.replacesReviewId ?? null,
+    restartCount: telemetry.restartCount ?? 0,
 
     // ts-fsrs's own ReviewLog: the card exactly as the algorithm saw it.
     before: {

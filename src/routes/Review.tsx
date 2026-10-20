@@ -10,6 +10,7 @@ import {
   fetchNextDue,
   gradeCard,
   QUEUE_LIMIT,
+  undoGrade,
 } from '../lib/review'
 import {
   GRADES,
@@ -72,6 +73,23 @@ function TextReview() {
   // second of them describing a schedule that was never applied.
   const shownGen = useRef(0)
   const gradedGen = useRef(-1)
+
+  /**
+   * The one grade Undo may take back - text mode's go_back (DESIGN.md 3.2).
+   *
+   * Voice review has two recoveries because a conversation can go wrong in two
+   * places. Text mode has only the one that applies: nothing can go wrong
+   * mid-card here, because nothing happens that you did not tap - so there is
+   * no "restart this card". What does happen is a mis-tapped grade button,
+   * which is a rating nobody meant, logged as though they had. Same remedy as
+   * voice: one card back, the row deleted, the re-grade flagged.
+   */
+  const [lastGrade, setLastGrade] = useState<{
+    card: Flashcard
+    reviewId: string
+    queue: Flashcard[]
+  } | null>(null)
+  const pendingReplacement = useRef<{ cardId: string; reviewId: string } | null>(null)
 
   const card = queue?.[0] ?? null
 
@@ -137,7 +155,14 @@ function TextReview() {
       const now = new Date()
       const t = now.getTime()
 
-      const { next, committed } = gradeCard(
+      // Matched on cardId, exactly as in VoiceReview.
+      const replacing =
+        pendingReplacement.current?.cardId === card.id
+          ? pendingReplacement.current.reviewId
+          : null
+      pendingReplacement.current = null
+
+      const { next, reviewId, committed } = gradeCard(
         uid,
         card,
         rating,
@@ -148,6 +173,8 @@ function TextReview() {
             revealedAt.current === null ? null : revealedAt.current - shownAt.current,
           // No model judged this answer. Explicitly null, never false.
           llmJudgedCorrect: null,
+          afterRollback: replacing !== null,
+          replacesReviewId: replacing,
         },
         now,
       )
@@ -159,6 +186,7 @@ function TextReview() {
       )
 
       setReviewed((n) => n + 1)
+      setLastGrade({ card, reviewId, queue: queue ?? [] })
       const rest = (queue ?? []).slice(1)
       // Still inside a learning step - it belongs to this session, not to some
       // future one. Anything further out leaves the queue for good.
@@ -168,7 +196,27 @@ function TextReview() {
     [uid, card, queue, showFrom],
   )
 
+  // Undo the last grade: restore the card's schedule, delete its row, and
+  // put the queue back exactly as it stood. Clearing `exhausted` re-arms the
+  // run-dry check for when the restored queue empties again.
+  const undo = useCallback(() => {
+    if (!uid || !lastGrade) return
+    const last = lastGrade
+    setLastGrade(null)
+    undoGrade(uid, last.card, last.reviewId).catch((e: unknown) =>
+      setError(e instanceof Error ? e.message : String(e)),
+    )
+    pendingReplacement.current = { cardId: last.card.id, reviewId: last.reviewId }
+    setReviewed((n) => Math.max(0, n - 1))
+    setExhausted(false)
+    setNextDue(null)
+    showFrom(last.queue)
+  }, [uid, lastGrade, showFrom])
+
+  // A dropped card may have been deleted, and the undo snapshot still holds
+  // it - restoring that queue would resurrect a card that no longer exists.
   const drop = useCallback(() => {
+    setLastGrade(null)
     showFrom((queue ?? []).slice(1))
   }, [queue, showFrom])
 
@@ -182,6 +230,7 @@ function TextReview() {
         if (cards.length === 0) return
         setExhausted(false)
         setNextDue(null)
+        setLastGrade(null)
         showFrom(cards)
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -228,6 +277,7 @@ function TextReview() {
         nextDue={nextDue}
         error={error}
         onReviewAhead={reviewAhead}
+        onUndo={lastGrade ? undo : undefined}
       />
     )
   }
@@ -236,7 +286,14 @@ function TextReview() {
     <div className="review">
       <div className="review-progress">
         <span>{queue.length === QUEUE_LIMIT ? `${QUEUE_LIMIT}+` : queue.length} left</span>
-        {reviewed > 0 && <span className="review-count">{reviewed} done</span>}
+        <span className="review-count">
+          {lastGrade && !editing && (
+            <button className="linkbtn review-undo" onClick={undo}>
+              Undo
+            </button>
+          )}
+          {reviewed > 0 && `${reviewed} done`}
+        </span>
       </div>
 
       {error && <p className="review-error">{error}</p>}
@@ -452,6 +509,7 @@ export function DoneScreen({
   nextDue,
   error,
   onReviewAhead,
+  onUndo,
 }: {
   reviewed: number
   nextDue: Flashcard | null
@@ -462,6 +520,12 @@ export function DoneScreen({
    * to make more work for yourself. Omitted by callers that cannot do it.
    */
   onReviewAhead?: () => void
+  /**
+   * Take back the grade that just emptied the queue. Text mode only: the last
+   * card is where a mis-tap is most likely to go unnoticed until the screen
+   * has already changed.
+   */
+  onUndo?: () => void
 }) {
   const now = new Date()
   const [loadingAhead, setLoadingAhead] = useState(false)
@@ -491,6 +555,12 @@ export function DoneScreen({
           </>
         )}
       </p>
+
+      {onUndo && (
+        <button className="linkbtn" onClick={onUndo}>
+          Undo last grade
+        </button>
+      )}
 
       {onReviewAhead && nextDue && (
         <button

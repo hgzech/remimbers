@@ -21,7 +21,7 @@ type Status = 'loading' | 'needs-setup' | 'ready'
 interface SettingsState {
   status: Status
   languages: string[]
-  /** See lib/settings.ts - gates the "what went wrong?" ask, not rollback. */
+  /** See lib/settings.ts - gates the "what went wrong?" ask, not restart or go-back. */
   feedbackOptIn: boolean
   save: (languages: string[]) => Promise<void>
   saveFeedback: (optIn: boolean) => Promise<void>
