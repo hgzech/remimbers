@@ -100,6 +100,14 @@ Also required: add `<user>.github.io` to Firebase Auth's **Authorized domains**,
 
 ---
 
+### 2.3 Library view
+
+Cards only, newest first; notes stay out of sight except captures with no card yet (generating or failed, with retry). One listener over the whole deck; search (every word, case- and accent-insensitive, over front, back, tags) runs in the browser. Per-card stats come from the card's own FSRS fields (`reps`, `lapses`, `due`, `last_review`), no review rows read.
+
+- **Below 768 px:** a list. Tapping a card opens it in place as editable text (no Edit step, no autofocus); Save/Cancel appear once changed. Also Source (fetches the note on request) and Delete (inline confirm).
+- **768 px and up:** a sortable table (question, answer, reviews, forgot, next, added) with the opened card, or the add form, in a sticky side panel. Columns drop by container width when the panel leaves the table narrow.
+- **Add card:** typed question and answer, saved as a `manual` note plus its card (§3).
+
 ## 3. Data model
 
 Everything under `users/{uid}/…` so the security rules are one line.
@@ -109,7 +117,7 @@ Everything under `users/{uid}/…` so the security rules are one line.
 | field | type | notes |
 |---|---|---|
 | `rawText` | string | the transcript |
-| `source` | `'voice' \| 'text' \| 'share'` | |
+| `source` | `'voice' \| 'text' \| 'share' \| 'manual'` | `manual`: a card typed into the Library. Written in one batch with its card, born `status: 'done'` with `cardIds` set, so `onNoteCreated` skips it without a model call |
 | `status` | `'transcribing' \| 'generating' \| 'done' \| 'failed'` | drives the capture-queue UI |
 | `createdAt` | Timestamp | |
 | `cardIds` | string[] | |
