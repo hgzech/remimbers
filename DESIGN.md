@@ -107,6 +107,7 @@ Cards only, newest first; notes stay out of sight except captures with no card y
 - **Below 768 px:** a list. Tapping a card opens it in place as editable text (no Edit step, no autofocus); Save/Cancel appear once changed. Also Source (fetches the note on request) and Delete (inline confirm).
 - **768 px and up:** a sortable table (question, answer, reviews, forgot, next, added) with the opened card, or the add form, in a sticky side panel. Columns drop by container width when the panel leaves the table narrow.
 - **Add card:** typed question and answer, saved as a `manual` note plus its card (§3).
+- **Import from a file:** CSV/TSV, question then answer, optional header; Anki plain-text export (`#separator`, `#html`, `#… column` headers) supported. Parsed in the browser, previewed, rows whose question and answer already exist (case/accent/space-insensitive) skipped. One `import` note per file listing all cards; cards written in batches of 400, `createdAt`/`due` 1 ms apart in file order.
 
 ## 3. Data model
 
@@ -117,7 +118,7 @@ Everything under `users/{uid}/…` so the security rules are one line.
 | field | type | notes |
 |---|---|---|
 | `rawText` | string | the transcript |
-| `source` | `'voice' \| 'text' \| 'share' \| 'manual'` | `manual`: a card typed into the Library. Written in one batch with its card, born `status: 'done'` with `cardIds` set, so `onNoteCreated` skips it without a model call |
+| `source` | `'voice' \| 'text' \| 'share' \| 'manual' \| 'import'` | `manual`: a card typed into the Library; `import`: one per imported file. Written in one batch with its card, born `status: 'done'` with `cardIds` set, so `onNoteCreated` skips it without a model call |
 | `status` | `'transcribing' \| 'generating' \| 'done' \| 'failed'` | drives the capture-queue UI |
 | `createdAt` | Timestamp | |
 | `cardIds` | string[] | |

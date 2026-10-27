@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthProvider'
 import { CardDetail } from '../components/CardDetail'
 import { CardForm } from '../components/CardForm'
 import { CardStatsLine } from '../components/CardStatsLine'
+import { ImportPanel } from '../components/ImportPanel'
 import { addManualCard, subscribeToAllCards } from '../lib/cards'
 import {
   FIRST_DIR,
@@ -30,7 +31,7 @@ const WIDE = '(min-width: 768px)'
 const SHORT_DATE = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })
 
 /**
- * The library: every card, with search and manual adding.
+ * The library: every card, with search, manual adding and CSV import.
  *
  * Two layouts over the same data and the same card component. On a phone,
  * a list where tapping a card opens it in place. On a large screen, a
@@ -54,7 +55,8 @@ export function Library() {
   const [sort, setSort] = useState<Sort>({ key: 'added', dir: 'desc' })
   const [shown, setShown] = useState(PAGE)
   const [openId, setOpenId] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
+  // What the add area shows: nothing, the new-card form, or the file import.
+  const [adding, setAdding] = useState<false | 'card' | 'file'>(false)
   const [addedCount, setAddedCount] = useState(0)
 
   useEffect(() => {
@@ -99,7 +101,7 @@ export function Library() {
   }
 
   function startAdding() {
-    setAdding(true)
+    setAdding('card')
     setAddedCount(0)
     setSearch('')
     setOpenId(null)
@@ -112,7 +114,10 @@ export function Library() {
     setShown(PAGE)
   }
 
-  const addPanel = adding && (
+  const addPanel =
+    adding === 'file' ? (
+      <ImportPanel uid={uid} existing={deck.cards} onClose={() => setAdding(false)} />
+    ) : adding === 'card' && (
     <section className="lib-add">
       <p className="lib-panel-title">New card</p>
       <CardForm
@@ -130,6 +135,11 @@ export function Library() {
           {addedCount === 1 ? 'Card added.' : `${addedCount} cards added.`} Type the next one, or
           {wide ? ' click' : ' tap'} Done.
         </p>
+      )}
+      {addedCount === 0 && (
+        <button className="linkbtn lib-import-link" onClick={() => setAdding('file')}>
+          Import many from a file…
+        </button>
       )}
     </section>
   )

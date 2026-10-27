@@ -81,6 +81,69 @@ export function addManualCard(
   return { cardId, written: batch.commit() }
 }
 
+/** Firestore allows 500 writes per batch; stay clear of it. */
+const IMPORT_BATCH = 400
+
+/**
+ * Add many cards at once, from a file.
+ *
+ * One `import` note for the whole file, listing every card, so the cards point
+ * somewhere like all others and `onNoteCreated` skips it (born `done` with
+ * cards, as in addManualCard). The note goes in the first batch.
+ *
+ * Each card is one millisecond after the previous one, in file order. New
+ * cards are introduced in order of `due`, so the file's order is the order
+ * you meet them in; and the library, newest first, still shows a stable order.
+ *
+ * Awaited, unlike a single add: the caller shows progress, and an import that
+ * half-landed should say so rather than claim success.
+ */
+export async function importCards(
+  uid: string,
+  rows: { front: string; back: string }[],
+  fileName: string,
+  onProgress?: (done: number) => void,
+): Promise<number> {
+  // A note with no cards would look like a fresh capture to onNoteCreated,
+  // which would then write cards from "Imported from ...". Never create one.
+  if (rows.length === 0) return 0
+  const note = doc(notesCollection(uid))
+  const ids = rows.map((_, i) => `${note.id}_${i}`)
+  const base = Date.now()
+
+  for (let start = 0; start < rows.length; start += IMPORT_BATCH) {
+    const batch = writeBatch(db)
+    if (start === 0) {
+      batch.set(note, {
+        rawText: `Imported from ${fileName} (${rows.length} ${rows.length === 1 ? 'card' : 'cards'})`,
+        source: 'import',
+        status: 'done',
+        cardIds: ids,
+        createdAt: serverTimestamp(),
+      })
+    }
+    rows.slice(start, start + IMPORT_BATCH).forEach((row, j) => {
+      const i = start + j
+      const at = new Date(base + i)
+      const stamp = Timestamp.fromDate(at)
+      batch.set(doc(cardsCollection(uid), ids[i]), {
+        noteId: note.id,
+        front: row.front.trim(),
+        back: row.back.trim(),
+        type: 'qa',
+        tags: [],
+        suspended: false,
+        createdAt: stamp,
+        updatedAt: stamp,
+        ...fromFsrsCard(createEmptyCard(at)),
+      })
+    })
+    await batch.commit()
+    onProgress?.(Math.min(rows.length, start + IMPORT_BATCH))
+  }
+  return rows.length
+}
+
 /**
  * Edit a card's text.
  *

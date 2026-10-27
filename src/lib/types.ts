@@ -9,12 +9,13 @@ import type { Card as FsrsCard, Grade, State } from 'ts-fsrs'
  * as the card's origin, shown on request and given to the grader as context.
  *
  * `manual` notes are not captures: they exist only so a card typed in by hand
- * has a noteId like every other card (see addManualCard).
+ * has a noteId like every other card (see addManualCard). `import` notes are
+ * the same for a whole imported file (see importCards).
  */
 export interface Note {
   id: string
   rawText: string
-  source: 'voice' | 'text' | 'share' | 'manual'
+  source: 'voice' | 'text' | 'share' | 'manual' | 'import'
   status: 'transcribing' | 'generating' | 'done' | 'failed'
   error?: string
   cardIds: string[]
