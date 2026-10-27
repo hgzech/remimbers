@@ -422,7 +422,6 @@ body {
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
-.lib-card.open .lib-back { display: block; -webkit-line-clamp: unset; }
 
 .lib-stats {
   margin: 8px 0 0;
@@ -433,15 +432,34 @@ body {
 .lib-new { color: #63c6a8; }
 .lib-forgot { color: #d9a441; }
 
-.card-detail {
-  padding: 4px 14px 10px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-2);
+/* An opened card: the card's own text, editable where it stands. */
+.card-detail { padding: 9px 10px 8px; }
+
+.card-detail-input {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 4px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  /* 16px minimum, or iOS Safari zooms the viewport on focus. */
+  font-size: 16px;
+  line-height: 1.45;
+  resize: none;
+  field-sizing: content;
+  overflow-wrap: anywhere;
 }
-.card-detail .card-form { padding-top: 10px; }
-.card-detail-meta { margin: 10px 0 2px; font-size: 12px; color: var(--text-dim); }
+.card-detail-input:hover { border-color: var(--border); }
+.card-detail-input:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+.card-detail-back { color: var(--accent); margin-top: 2px; }
+
+.card-detail-stats { margin: 8px 4px 0; }
+.card-detail-meta { margin: 2px 4px 0; font-size: 12px; color: var(--text-dim); }
 .card-detail-source {
-  margin: 10px 0 4px;
+  margin: 10px 4px 4px;
   padding: 2px 0 2px 12px;
   border-left: 2px solid var(--border);
   font-size: 13px;
@@ -453,10 +471,126 @@ body {
 .card-detail-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 4px;
+  gap: 14px;
+  margin: 6px 4px 0;
+  min-height: 34px;
 }
-.card-detail-ask { font-size: 13px; }
+.card-detail-ask { font-size: 13px; color: var(--text-dim); }
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- card library: large screen ---------- */
+
+.library-wide { max-width: 1280px; padding: 0 24px 32px; }
+.library-wide .lib-bar { padding: 18px 0 14px; }
+.library-wide .lib-search { max-width: 420px; }
+.library-wide .lib-bar .lib-add-btn { margin-left: auto; }
+
+.lib-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+.lib-split.with-panel { grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); }
+
+/* The panel stays in view while the table scrolls under it. */
+.lib-panel {
+  position: sticky;
+  top: 74px;
+  max-height: calc(100dvh - 190px);
+  overflow-y: auto;
+}
+.lib-panel .lib-add { margin: 0; }
+.lib-panel-card {
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: var(--radius);
+}
+.lib-panel-card .card-detail { padding: 14px 14px 10px; }
+.lib-panel-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.lib-table-wrap {
+  container-type: inline-size;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.lib-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 14px;
+}
+.lib-table th {
+  padding: 0 12px;
+  height: 40px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.lib-sort {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.lib-sort:hover, .lib-sort.active { color: var(--text); }
+.lib-sort-arrow { display: inline-block; width: 1em; margin-left: 2px; }
+
+.lib-table td {
+  padding: 10px 12px;
+  vertical-align: top;
+  line-height: 1.45;
+  border-bottom: 1px solid var(--border);
+}
+.lib-table tbody tr:last-child td { border-bottom: none; }
+.lib-table tbody tr { cursor: pointer; transition: background 0.1s; }
+.lib-table tbody tr:hover { background: var(--surface-2); }
+.lib-table tbody tr:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.lib-table tbody tr.selected { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+
+.lib-table th { vertical-align: middle; }
+.lib-table td.col-a { color: var(--accent); }
+.lib-table .col-num { width: 76px; text-align: right; font-variant-numeric: tabular-nums; }
+.lib-table th.col-num { text-align: right; }
+.lib-table .col-next { width: 104px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.lib-table .col-added { width: 80px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.lib-dim { color: var(--text-dim); opacity: 0.6; }
+
+.lib-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Narrow table (an iPad in portrait with a card open): keep what you scan by. */
+@container (max-width: 640px) {
+  .lib-table .col-added, .lib-table .col-forgot { display: none; }
+}
+@container (max-width: 480px) {
+  .lib-table .col-a, .lib-table .col-reviews { display: none; }
+}
 
 .card-form-actions {
   display: flex;

@@ -33,6 +33,13 @@ export function formatAgo(at: Date, now: Date): string {
   return `${(days / 365.25).toFixed(1)} years ago`
 }
 
+export interface CardStatParts {
+  isNew: boolean
+  reviews: string | null
+  forgot: string | null
+  next: string
+}
+
 /**
  * The one-line summary under a card in the library.
  *
@@ -41,13 +48,6 @@ export function formatAgo(at: Date, now: Date): string {
  * counts the times a card you had learned was forgotten (rated Again from
  * the review state) - "forgot" is that, not every Again.
  */
-export interface CardStatParts {
-  isNew: boolean
-  reviews: string | null
-  forgot: string | null
-  next: string
-}
-
 export function cardStats(card: Flashcard, now: Date): CardStatParts {
   const isNew = card.state === State.New
   const until = formatUntil(card.due.toDate(), now)
@@ -73,4 +73,46 @@ export function searchText(card: Flashcard): string {
 export function matchesQuery(haystack: string, query: string): boolean {
   const terms = normalize(query).split(/\s+/).filter(Boolean)
   return terms.every((t) => haystack.includes(t))
+}
+
+/** Columns the large-screen table can sort by. */
+export type SortKey = 'added' | 'due' | 'reviews' | 'forgot' | 'question'
+export type Sort = { key: SortKey; dir: 'asc' | 'desc' }
+
+/** The direction a column sorts in when you first click it: the useful end first. */
+export const FIRST_DIR: Record<SortKey, Sort['dir']> = {
+  added: 'desc',
+  due: 'asc',
+  reviews: 'desc',
+  forgot: 'desc',
+  question: 'asc',
+}
+
+const COLLATOR = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
+
+function sortValue(card: Flashcard, key: Exclude<SortKey, 'question'>): number {
+  switch (key) {
+    case 'added':
+      return card.createdAt?.toMillis() ?? Infinity
+    case 'due':
+      return card.due.toMillis()
+    case 'reviews':
+      return card.reps
+    case 'forgot':
+      return card.lapses
+  }
+}
+
+/** A sorted copy. Ties fall back to newest first, so the order never jitters. */
+export function sortCards(cards: Flashcard[], sort: Sort): Flashcard[] {
+  const sign = sort.dir === 'asc' ? 1 : -1
+  const newest = (a: Flashcard, b: Flashcard) =>
+    (b.createdAt?.toMillis() ?? Infinity) - (a.createdAt?.toMillis() ?? Infinity)
+  return [...cards].sort((a, b) => {
+    const primary =
+      sort.key === 'question'
+        ? COLLATOR.compare(a.front, b.front)
+        : sortValue(a, sort.key) - sortValue(b, sort.key)
+    return sign * primary || newest(a, b)
+  })
 }
