@@ -4,11 +4,10 @@ import {
   deleteDoc,
   doc,
   getDoc,
-  limit,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
+  where,
 } from 'firebase/firestore'
 import { db } from './firebase'
 import type { Note } from './types'
@@ -69,15 +68,24 @@ export async function fetchNote(uid: string, noteId: string): Promise<Note | nul
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as Note) : null
 }
 
-export function subscribeToRecentNotes(
-  uid: string,
-  count: number,
-  cb: (notes: Note[]) => void,
-) {
-  const q = query(notesCollection(uid), orderBy('createdAt', 'desc'), limit(count))
+/**
+ * Captures that have not turned into cards (yet): still generating, or failed.
+ *
+ * The library lists cards, not notes, so these are the only notes it shows -
+ * a failed capture has no card to find it by, and the library is the one
+ * place it can be retried. Sorted client-side: an `in` filter plus orderBy
+ * would need a composite index for a list that is almost always empty.
+ */
+export function subscribeToUnfinishedNotes(uid: string, cb: (notes: Note[]) => void) {
+  const q = query(notesCollection(uid), where('status', 'in', ['generating', 'failed']))
   return onSnapshot(q, (snap) => {
-    cb(
-      snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Note),
-    )
+    const notes = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Note)
+    notes.sort((a, b) => (b.createdAt?.toMillis() ?? Infinity) - (a.createdAt?.toMillis() ?? Infinity))
+    cb(notes)
   })
+}
+
+/** Delete a note that produced no cards (a failed capture). */
+export function deleteNote(uid: string, noteId: string) {
+  return deleteDoc(doc(notesCollection(uid), noteId))
 }

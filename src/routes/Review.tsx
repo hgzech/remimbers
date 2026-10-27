@@ -439,7 +439,11 @@ function CardContext({
       </div>
       {open && (
         <p className="review-note">
-          {note ? note.rawText : 'The note this came from is gone.'}
+          {note
+            ? note.source === 'manual'
+              ? 'You added this card by hand.'
+              : note.rawText
+            : 'The note this came from is gone.'}
         </p>
       )}
     </div>

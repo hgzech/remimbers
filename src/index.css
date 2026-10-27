@@ -323,32 +323,189 @@ body {
 .badge-live { color: var(--accent); border-color: var(--accent); }
 .badge-bad { color: #f2777a; border-color: #f2777a; }
 
-/* ---------- cards under a note ---------- */
+/* ---------- card library ---------- */
 
-.note-delete { margin-left: auto; }
+.library {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 12px 28px;
+}
 
-.card-list {
+/* Sticks to the top of .app-main, which is the scroll container. */
+.lib-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 10px;
+  background: var(--bg);
+}
+
+.lib-search {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  /* 16px minimum, or iOS Safari zooms the viewport on focus. */
+  font-size: 16px;
+  padding: 9px 16px;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  -webkit-appearance: none;
+  appearance: none;
+}
+.lib-search::placeholder { color: var(--text-dim); }
+.lib-search:focus { outline: none; border-color: var(--accent); }
+
+.lib-add-btn { flex: none; min-height: 40px; }
+
+.lib-add {
+  margin-bottom: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+}
+.lib-add-note { margin: 8px 0 0; font-size: 12px; color: var(--text-dim); }
+
+.lib-count { margin: 0 4px 8px; font-size: 12px; color: var(--text-dim); }
+.lib-empty { margin: 48px 16px; }
+
+.lib-list {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   display: grid;
   gap: 8px;
 }
 
-.card {
-  background: var(--surface-2);
+.lib-card {
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 11px 12px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.lib-card.open { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+
+.lib-card-face {
+  display: block;
+  width: 100%;
+  padding: 13px 14px 11px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.card-front { margin: 0 0 4px; font-size: 15px; line-height: 1.45; }
-.card-back {
-  margin: 0;
+.lib-front {
+  margin: 0 0 3px;
   font-size: 15px;
   line-height: 1.45;
-  color: var(--accent);
+  overflow-wrap: anywhere;
 }
+.lib-back {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+  /* Long answers (a whole highlighted passage) stay three lines until opened. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.lib-card.open .lib-back { display: block; -webkit-line-clamp: unset; }
+
+.lib-stats {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.lib-new { color: #63c6a8; }
+.lib-forgot { color: #d9a441; }
+
+.card-detail {
+  padding: 4px 14px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.card-detail .card-form { padding-top: 10px; }
+.card-detail-meta { margin: 10px 0 2px; font-size: 12px; color: var(--text-dim); }
+.card-detail-source {
+  margin: 10px 0 4px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.card-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.card-detail-ask { font-size: 13px; }
+
+.card-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: #f2777a;
+  color: #f2777a;
+}
+
+.lib-more { display: block; margin: 14px auto 0; }
+
+/* Captures with no card yet. */
+.lib-pending {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.lib-pending-item {
+  padding: 11px 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+.lib-pending-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.lib-pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.lib-pending-status { font-size: 12px; color: var(--accent); }
+.lib-pending-status.bad { color: #f2777a; }
 
 .card-actions {
   display: flex;

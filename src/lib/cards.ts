@@ -2,61 +2,90 @@ import {
   arrayRemove,
   collection,
   doc,
-  limit,
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   Timestamp,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore'
+import { createEmptyCard } from 'ts-fsrs'
 import { db } from './firebase'
-import type { Flashcard } from './types'
+import { notesCollection } from './notes'
+import { fromFsrsCard, type Flashcard } from './types'
 
 export function cardsCollection(uid: string) {
   return collection(db, 'users', uid, 'cards')
 }
 
-function noteDoc(uid: string, noteId: string) {
-  return doc(collection(db, 'users', uid, 'notes'), noteId)
-}
-
 /**
- * Subscribe to recent cards and let the caller group them by note.
+ * Subscribe to the whole deck, newest first.
  *
- * One listener for the whole library rather than one per note: the library
- * shows at most 50 notes, so a per-note listener would mean 50 subscriptions
- * to fetch a few hundred documents that a single query already returns.
+ * Unlimited on purpose: the library searches every card, and search is done
+ * in the browser. A personal deck is hundreds to a few thousand small
+ * documents, which one listener handles fine. If that ever stops being true,
+ * this is the place to page.
  */
-export function subscribeToRecentCards(
-  uid: string,
-  count: number,
-  cb: (cards: Flashcard[]) => void,
-) {
-  const q = query(cardsCollection(uid), orderBy('createdAt', 'desc'), limit(count))
+export function subscribeToAllCards(uid: string, cb: (cards: Flashcard[]) => void) {
+  const q = query(cardsCollection(uid), orderBy('createdAt', 'desc'))
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Flashcard))
   })
 }
 
-export function groupByNote(cards: Flashcard[]): Map<string, Flashcard[]> {
-  const byNote = new Map<string, Flashcard[]>()
-  for (const card of cards) {
-    const list = byNote.get(card.noteId)
-    if (list) list.push(card)
-    else byNote.set(card.noteId, [card])
-  }
-  // Cards arrive newest-first; within a note, id order is generation order.
-  for (const list of byNote.values()) list.sort((a, b) => a.id.localeCompare(b.id))
-  return byNote
+/**
+ * Add a card typed in by hand.
+ *
+ * Every card points at a note (`noteId` is how review rows, the review screen
+ * and the trigger all find a card's origin), so a hand-made card gets a small
+ * note of its own with `source: 'manual'`. Note and card are written in one
+ * batch, and the note is born `done` with its card listed: that is exactly
+ * the condition under which `onNoteCreated` skips without calling the model.
+ * `rawText` must be non-empty for the same reason - the trigger marks an
+ * empty note failed before it checks anything else.
+ *
+ * Same id scheme as generated cards (`{noteId}_0`), and the same fresh FSRS
+ * state, so the card is due at once like any other new card. Not awaited by
+ * the UI, same reasoning as addNote.
+ */
+export function addManualCard(
+  uid: string,
+  fields: { front: string; back: string },
+): { cardId: string; written: Promise<void> } {
+  const front = fields.front.trim()
+  const back = fields.back.trim()
+  const note = doc(notesCollection(uid))
+  const cardId = `${note.id}_0`
+  const now = Timestamp.now()
+
+  const batch = writeBatch(db)
+  batch.set(note, {
+    rawText: `${front}\n${back}`,
+    source: 'manual',
+    status: 'done',
+    cardIds: [cardId],
+    createdAt: serverTimestamp(),
+  })
+  batch.set(doc(cardsCollection(uid), cardId), {
+    noteId: note.id,
+    front,
+    back,
+    type: 'qa',
+    tags: [],
+    suspended: false,
+    createdAt: now,
+    updatedAt: now,
+    ...fromFsrsCard(createEmptyCard(now.toDate())),
+  })
+  return { cardId, written: batch.commit() }
 }
 
 /**
  * Edit a card's text.
  *
- * Deliberately does not touch the note. Cards are build output and notes are
- * the source (DESIGN.md section 3) - fixing a card fixes this card, and
- * regenerating from the note later is expected to overwrite it.
+ * Deliberately does not touch the note: a card is fixed in place, and the
+ * note is only kept as its origin.
  *
  * `updatedAt` is a client Timestamp rather than serverTimestamp(), and handed
  * back to the caller, because it is not an audit trail - it is a content
@@ -83,9 +112,7 @@ export function updateCardText(
 /**
  * Delete a card and drop it from its note's `cardIds`.
  *
- * Batched so the note can never list a card that no longer exists - the
- * library would render a phantom and Phase 2's queue would fetch a missing
- * document.
+ * Batched so the note can never list a card that no longer exists.
  *
  * The card's `reviews` subcollection is deliberately NOT deleted. Firestore
  * keeps subcollection documents when their parent goes, and that is what we
@@ -96,18 +123,6 @@ export function updateCardText(
 export function deleteCard(uid: string, card: Pick<Flashcard, 'id' | 'noteId'>) {
   const batch = writeBatch(db)
   batch.delete(doc(cardsCollection(uid), card.id))
-  batch.update(noteDoc(uid, card.noteId), { cardIds: arrayRemove(card.id) })
-  return batch.commit()
-}
-
-/** Delete a note and every card derived from it. */
-export function deleteNoteWithCards(
-  uid: string,
-  noteId: string,
-  cards: Flashcard[],
-) {
-  const batch = writeBatch(db)
-  for (const card of cards) batch.delete(doc(cardsCollection(uid), card.id))
-  batch.delete(noteDoc(uid, noteId))
+  batch.update(doc(notesCollection(uid), card.noteId), { cardIds: arrayRemove(card.id) })
   return batch.commit()
 }

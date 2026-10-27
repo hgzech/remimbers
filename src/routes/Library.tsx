@@ -1,38 +1,58 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthProvider'
-import { retryNote, subscribeToRecentNotes } from '../lib/notes'
-import {
-  deleteCard,
-  deleteNoteWithCards,
-  groupByNote,
-  subscribeToRecentCards,
-  updateCardText,
-} from '../lib/cards'
+import { CardDetail } from '../components/CardDetail'
+import { CardForm } from '../components/CardForm'
+import { addManualCard, subscribeToAllCards } from '../lib/cards'
+import { cardStats, matchesQuery, searchText } from '../lib/cardStats'
+import { deleteNote, retryNote, subscribeToUnfinishedNotes } from '../lib/notes'
 import type { Flashcard, Note } from '../lib/types'
 
-const NOTE_LIMIT = 50
-// Five cards per note is the generation ceiling, so this covers the notes above
-// it with room to spare. One query, grouped client-side.
-const CARD_LIMIT = NOTE_LIMIT * 5
+/** Cards rendered before "Show more". Search runs over the whole deck regardless. */
+const PAGE = 100
 
+/**
+ * The library: every card, newest first, with search and manual adding.
+ *
+ * Cards, not notes. The note a card came from is one tap away in the card's
+ * detail, and otherwise stays out of sight. The only notes shown here are
+ * captures that have no card yet - still being written, or failed - because
+ * this is the one place those can be seen and retried.
+ */
 export function Library() {
   const { user } = useAuth()
-  const [notes, setNotes] = useState<Note[] | null>(null)
-  const [cards, setCards] = useState<Flashcard[]>([])
+  const uid = user?.uid
+  // `at` is when the snapshot arrived. Relative times ("next in 3 days") are
+  // computed against it rather than against a clock read during render.
+  const [deck, setDeck] = useState<{ cards: Flashcard[]; at: Date } | null>(null)
+  const [unfinished, setUnfinished] = useState<Note[]>([])
+  const [search, setSearch] = useState('')
+  const [shown, setShown] = useState(PAGE)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const [addedCount, setAddedCount] = useState(0)
 
   useEffect(() => {
-    if (!user) return
-    return subscribeToRecentNotes(user.uid, NOTE_LIMIT, setNotes)
-  }, [user])
+    if (!uid) return
+    return subscribeToAllCards(uid, (cards) => setDeck({ cards, at: new Date() }))
+  }, [uid])
 
   useEffect(() => {
-    if (!user) return
-    return subscribeToRecentCards(user.uid, CARD_LIMIT, setCards)
-  }, [user])
+    if (!uid) return
+    return subscribeToUnfinishedNotes(uid, setUnfinished)
+  }, [uid])
 
-  const cardsByNote = useMemo(() => groupByNote(cards), [cards])
+  const haystacks = useMemo(
+    () => new Map((deck?.cards ?? []).map((c) => [c.id, searchText(c)])),
+    [deck],
+  )
 
-  if (notes === null) {
+  const results = useMemo(() => {
+    const cards = deck?.cards ?? []
+    if (!search.trim()) return cards
+    return cards.filter((c) => matchesQuery(haystacks.get(c.id) ?? '', search))
+  }, [deck, haystacks, search])
+
+  if (!uid || deck === null) {
     return (
       <div className="centered">
         <div className="spinner" aria-label="Loading" />
@@ -40,171 +60,175 @@ export function Library() {
     )
   }
 
-  if (notes.length === 0) {
-    return (
-      <div className="centered">
-        <p className="empty">Nothing captured yet.</p>
-      </div>
-    )
-  }
+  const total = deck.cards.length
+  const searching = search.trim() !== ''
 
   return (
-    <>
-      <p className="hint list-note">
-        Your notes, and the cards written from them. Edit a card that reads
-        badly &mdash; the note stays as it was.
-      </p>
-      <ul className="note-list">
-        {notes.map((note) => (
-          <NoteRow
-            key={note.id}
-            note={note}
-            cards={cardsByNote.get(note.id) ?? []}
-            uid={user!.uid}
-          />
-        ))}
-      </ul>
-    </>
-  )
-}
-
-function NoteRow({
-  note,
-  cards,
-  uid,
-}: {
-  note: Note
-  cards: Flashcard[]
-  uid: string
-}) {
-  return (
-    <li className="note">
-      <p className="note-text">{note.rawText}</p>
-
-      <div className="note-meta">
-        <span>{note.createdAt?.toDate().toLocaleDateString() ?? 'just now'}</span>
-        {note.status === 'generating' && (
-          <span className="badge badge-live">writing cards…</span>
-        )}
-        {note.status === 'failed' && <span className="badge badge-bad">failed</span>}
-        {note.status === 'done' && (
-          <span className="badge">
-            {cards.length === 1 ? '1 card' : `${cards.length} cards`}
-          </span>
-        )}
-        <button
-          className="linkbtn danger note-delete"
-          onClick={() => {
-            if (confirm('Delete this note and its cards?')) {
-              void deleteNoteWithCards(uid, note.id, cards)
-            }
+    <div className="library">
+      <div className="lib-bar">
+        <input
+          type="search"
+          className="lib-search"
+          placeholder={total > 0 ? `Search ${total} cards` : 'Search'}
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setShown(PAGE)
           }}
-        >
-          Delete note
-        </button>
+          aria-label="Search cards"
+        />
+        {!adding && (
+          <button
+            className="btn btn-primary btn-small lib-add-btn"
+            onClick={() => {
+              setAdding(true)
+              setAddedCount(0)
+              setSearch('')
+            }}
+          >
+            Add card
+          </button>
+        )}
       </div>
 
-      {note.status === 'failed' && (
-        <div className="card-fail">
-          <p className="card-fail-msg">{note.error ?? 'Generation failed.'}</p>
-          <button className="btn btn-small" onClick={() => void retryNote(uid, note)}>
-            Try again
-          </button>
-        </div>
+      {adding && (
+        <section className="lib-add">
+          <CardForm
+            key={addedCount}
+            submitLabel="Add"
+            cancelLabel="Done"
+            onSubmit={(fields) => {
+              void addManualCard(uid, fields).written
+              setAddedCount((n) => n + 1)
+            }}
+            onCancel={() => setAdding(false)}
+          />
+          {addedCount > 0 && (
+            <p className="lib-add-note">
+              {addedCount === 1 ? 'Card added.' : `${addedCount} cards added.`} Type the next
+              one, or tap Done.
+            </p>
+          )}
+        </section>
       )}
 
-      {cards.length > 0 && (
-        <ul className="card-list">
-          {cards.map((card) => (
-            <CardRow key={card.id} card={card} uid={uid} />
+      {unfinished.length > 0 && !searching && (
+        <ul className="lib-pending">
+          {unfinished.map((note) => (
+            <UnfinishedNote key={note.id} note={note} uid={uid} />
           ))}
         </ul>
       )}
+
+      {total === 0 ? (
+        <p className="empty lib-empty">
+          No cards yet. Capture something, or add a card by hand.
+        </p>
+      ) : results.length === 0 ? (
+        <p className="empty lib-empty">No cards match “{search.trim()}”.</p>
+      ) : (
+        <>
+          {searching && (
+            <p className="lib-count">
+              {results.length === 1 ? '1 card' : `${results.length} cards`}
+            </p>
+          )}
+          <ul className="lib-list">
+            {results.slice(0, shown).map((card) => (
+              <LibraryCard
+                key={card.id}
+                card={card}
+                uid={uid}
+                now={deck.at}
+                open={openId === card.id}
+                onToggle={() => setOpenId((id) => (id === card.id ? null : card.id))}
+              />
+            ))}
+          </ul>
+          {results.length > shown && (
+            <button className="btn btn-small lib-more" onClick={() => setShown((n) => n + PAGE)}>
+              Show more ({results.length - shown} left)
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function LibraryCard({
+  card,
+  uid,
+  now,
+  open,
+  onToggle,
+}: {
+  card: Flashcard
+  uid: string
+  now: Date
+  open: boolean
+  onToggle: () => void
+}) {
+  const stats = cardStats(card, now)
+  return (
+    <li className={`lib-card${open ? ' open' : ''}`}>
+      <button className="lib-card-face" onClick={onToggle} aria-expanded={open}>
+        <p className="lib-front">{card.front}</p>
+        <p className="lib-back">{card.back}</p>
+        <p className="lib-stats">
+          {stats.isNew ? <span className="lib-new">New</span> : stats.reviews}
+          {stats.forgot && (
+            <>
+              {' · '}
+              <span className="lib-forgot">{stats.forgot}</span>
+            </>
+          )}
+          {' · '}
+          {stats.next}
+        </p>
+      </button>
+      {open && <CardDetail key={card.id} card={card} uid={uid} now={now} onDeleted={onToggle} />}
     </li>
   )
 }
 
-function CardRow({ card, uid }: { card: Flashcard; uid: string }) {
-  const [editing, setEditing] = useState(false)
-  const [front, setFront] = useState(card.front)
-  const [back, setBack] = useState(card.back)
-
-  function cancel() {
-    setFront(card.front)
-    setBack(card.back)
-    setEditing(false)
-  }
-
-  function save() {
-    if (!front.trim() || !back.trim()) return
-    void updateCardText(uid, card.id, { front, back }).written
-    setEditing(false)
-  }
-
-  if (editing) {
-    return (
-      <li className="card card-editing">
-        <label className="card-label" htmlFor={`front-${card.id}`}>
-          Question
-        </label>
-        <textarea
-          id={`front-${card.id}`}
-          className="card-input"
-          value={front}
-          rows={2}
-          onChange={(e) => setFront(e.target.value)}
-          autoFocus
-        />
-        <label className="card-label" htmlFor={`back-${card.id}`}>
-          Answer
-        </label>
-        <textarea
-          id={`back-${card.id}`}
-          className="card-input"
-          value={back}
-          rows={2}
-          onChange={(e) => setBack(e.target.value)}
-        />
-        <div className="card-actions">
-          <button className="linkbtn" onClick={cancel}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary btn-small"
-            onClick={save}
-            disabled={!front.trim() || !back.trim()}
-          >
-            Save
-          </button>
-        </div>
-      </li>
-    )
-  }
+/** A capture with no cards yet: being written, or failed and waiting for a retry. */
+function UnfinishedNote({ note, uid }: { note: Note; uid: string }) {
+  const [confirming, setConfirming] = useState(false)
+  const failed = note.status === 'failed'
 
   return (
-    <li className="card">
-      <p className="card-front">{card.front}</p>
-      <p className="card-back">{card.back}</p>
-      <div className="card-actions">
-        {card.type === 'cloze' && <span className="badge badge-quiet">cloze</span>}
-        {card.tags.map((tag) => (
-          <span key={tag} className="badge badge-quiet">
-            {tag}
-          </span>
-        ))}
-        <span className="card-spacer" />
-        <button className="linkbtn" onClick={() => setEditing(true)}>
-          Edit
-        </button>
-        <button
-          className="linkbtn danger"
-          onClick={() => {
-            if (confirm('Delete this card?')) void deleteCard(uid, card)
-          }}
-        >
-          Delete
-        </button>
-      </div>
+    <li className="lib-pending-item">
+      <p className="lib-pending-text">{note.rawText}</p>
+      {failed ? (
+        <div className="lib-pending-actions">
+          <span className="lib-pending-status bad">{note.error ?? 'Could not write cards'}</span>
+          <span className="card-spacer" />
+          {confirming ? (
+            <>
+              <button className="linkbtn" onClick={() => setConfirming(false)}>
+                Keep
+              </button>
+              <button className="btn btn-small btn-danger" onClick={() => void deleteNote(uid, note.id)}>
+                Delete
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="linkbtn danger" onClick={() => setConfirming(true)}>
+                Delete
+              </button>
+              <button className="btn btn-small" onClick={() => void retryNote(uid, note)}>
+                Try again
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="lib-pending-actions">
+          <span className="lib-pending-status">Writing cards…</span>
+        </div>
+      )}
     </li>
   )
 }

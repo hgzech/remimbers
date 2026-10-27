@@ -2,16 +2,19 @@ import { Timestamp } from 'firebase/firestore'
 import type { Card as FsrsCard, Grade, State } from 'ts-fsrs'
 
 /**
- * A raw capture. Source of truth.
+ * A raw capture: where a card came from.
  *
- * Cards are DERIVED from notes, which is why rawText is kept forever even
- * though the audio is not: it lets us regenerate the whole deck when the
- * generation prompt improves, and gives the grader context during review.
+ * rawText is kept even though the audio is not. Cards are fixed in place and
+ * never regenerated from it (DESIGN.md v0.8, section 3.1); it stays
+ * as the card's origin, shown on request and given to the grader as context.
+ *
+ * `manual` notes are not captures: they exist only so a card typed in by hand
+ * has a noteId like every other card (see addManualCard).
  */
 export interface Note {
   id: string
   rawText: string
-  source: 'voice' | 'text' | 'share'
+  source: 'voice' | 'text' | 'share' | 'manual'
   status: 'transcribing' | 'generating' | 'done' | 'failed'
   error?: string
   cardIds: string[]
