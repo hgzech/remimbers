@@ -59,6 +59,12 @@ export interface Flashcard extends SchedulingState {
    * on every answer would erase that for the sake of a field nobody reads.
    */
   updatedAt: Timestamp
+  /**
+   * When the card was answered for the first time - what the daily new-card
+   * limit counts. Absent on cards never answered, and on cards first answered
+   * before Oct 2026, when the limit did not exist yet.
+   */
+  introducedAt?: Timestamp
 }
 
 /**

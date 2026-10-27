@@ -17,7 +17,7 @@ import {
   type RealtimeSession,
 } from '../lib/realtime'
 import type { Flashcard } from '../lib/types'
-import { useFeedbackOptIn, useLanguages } from '../settings/SettingsProvider'
+import { useFeedbackOptIn, useLanguages, useSettings } from '../settings/SettingsProvider'
 import { DoneScreen } from './Review'
 
 /**
@@ -394,6 +394,7 @@ export function VoiceReview() {
   const { user } = useAuth()
   const languages = useLanguages()
   const feedbackOptIn = useFeedbackOptIn()
+  const { newCardsPerDay } = useSettings()
   const uid = user?.uid
 
   const [phase, setPhase] = useState<Phase>('loading')
@@ -447,7 +448,7 @@ export function VoiceReview() {
   useEffect(() => {
     if (!uid) return
     let cancelled = false
-    fetchDueCards(uid, new Date())
+    fetchDueCards(uid, new Date(), newCardsPerDay)
       .then(async (cards) => {
         if (cancelled) return
         queueRef.current = cards
@@ -477,7 +478,7 @@ export function VoiceReview() {
     return () => {
       cancelled = true
     }
-  }, [uid])
+  }, [uid, newCardsPerDay])
 
   useEffect(() => {
     return () => {

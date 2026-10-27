@@ -1,7 +1,9 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
+  getCountFromServer,
   getDocs,
   limit,
   onSnapshot,
@@ -13,7 +15,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
-import type { Grade } from 'ts-fsrs'
+import { State, type Grade } from 'ts-fsrs'
 import { db } from './firebase'
 import { cardsCollection } from './cards'
 import { scheduler, schedulerSnapshot } from './fsrs'
@@ -28,30 +30,83 @@ import {
 export const QUEUE_LIMIT = 20
 
 /**
- * The due query. One composite index (suspended, due), already deployed.
- *
- * `now` is baked into the query, so a listener on it will NOT notice a card
- * becoming due as time passes - only writes re-fire it. Callers that care about
- * the passage of time re-issue the query instead of trusting the listener.
+ * A study day starts at 4 am local time, as in Anki: a session after
+ * midnight still counts toward the day before, so the new-card limit does not
+ * reset while you are still up.
  */
-function dueQuery(uid: string, now: Date, max: number) {
+export const DAY_STARTS_AT_HOUR = 4
+
+export function studyDayStart(now: Date): Date {
+  const start = new Date(now)
+  start.setHours(DAY_STARTS_AT_HOUR, 0, 0, 0)
+  if (now < start) start.setDate(start.getDate() - 1)
+  return start
+}
+
+const LEARNED = [State.Learning, State.Review, State.Relearning]
+
+/**
+ * Due cards, split by whether you have met them yet. The daily new-card
+ * limit needs the two apart: cards being learned are always served, new ones
+ * only up to the day's allowance.
+ *
+ * Both ride one composite index (suspended, state, due). `now` is baked in,
+ * so a listener on these will NOT notice a card becoming due as time passes -
+ * only writes re-fire it. Callers that care re-issue the query.
+ */
+function learnedDueQuery(uid: string, now: Date, max: number) {
   return query(
     cardsCollection(uid),
     where('suspended', '==', false),
+    where('state', 'in', LEARNED),
     where('due', '<=', Timestamp.fromDate(now)),
     orderBy('due'),
     limit(max),
   )
 }
 
+function newDueQuery(uid: string, now: Date, max?: number) {
+  const parts = [
+    where('suspended', '==', false),
+    where('state', '==', State.New),
+    where('due', '<=', Timestamp.fromDate(now)),
+    orderBy('due'),
+  ]
+  return max === undefined
+    ? query(cardsCollection(uid), ...parts)
+    : query(cardsCollection(uid), ...parts, limit(max))
+}
+
+/** Cards answered for the first time since the study day began (see gradeCard). */
+function introducedTodayQuery(uid: string, now: Date) {
+  return query(
+    cardsCollection(uid),
+    where('introducedAt', '>=', Timestamp.fromDate(studyDayStart(now))),
+  )
+}
+
 /**
- * Fetch the session's queue once, as a snapshot.
+ * How many new cards today's limit still allows.
+ *
+ * A plain read rather than a count aggregate: it is at most `perDay` small
+ * documents, and unlike an aggregate it answers from the offline cache,
+ * including cards graded a moment ago in this very session.
+ */
+async function newCardsLeftToday(uid: string, now: Date, perDay: number): Promise<number> {
+  if (perDay <= 0) return 0
+  const snap = await getDocs(introducedTodayQuery(uid, now))
+  return Math.max(0, perDay - snap.size)
+}
+
+/**
+ * Fetch the session's queue once, as a snapshot: cards being learned first,
+ * then new cards up to what today's limit still allows.
  *
  * Deliberately getDocs and not onSnapshot. A live listener would re-add a card
  * the moment its own grade landed - a card rated `Again` is due in a minute, so
  * the query it just left is a query it immediately re-enters. The session owns
  * its queue in memory from here; the server is consulted again only when the
- * local queue runs dry.
+ * local queue runs dry, and that re-fetch sees the new cards met so far.
  *
  * Offline this resolves from the local cache rather than failing, which is the
  * whole point of persistence: the day's cards were already fetched.
@@ -59,30 +114,57 @@ function dueQuery(uid: string, now: Date, max: number) {
 export async function fetchDueCards(
   uid: string,
   now: Date,
+  newPerDay: number,
   max = QUEUE_LIMIT,
 ): Promise<Flashcard[]> {
-  const snap = await getDocs(dueQuery(uid, now, max))
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Flashcard)
+  const toCard = (d: { id: string; data: () => object }) => ({ id: d.id, ...d.data() }) as Flashcard
+  const learned = (await getDocs(learnedDueQuery(uid, now, max))).docs.map(toCard)
+  const room = max - learned.length
+  if (room <= 0) return learned
+  const left = await newCardsLeftToday(uid, now, newPerDay)
+  if (left <= 0) return learned
+  const fresh = (await getDocs(newDueQuery(uid, now, Math.min(room, left)))).docs.map(toCard)
+  return [...learned, ...fresh]
 }
 
 /**
- * Live count for the nav badge, capped.
- *
- * Reads `cap + 1` documents so the UI can say "20+" without a second query,
- * and stays current as cards are graded elsewhere in the app. See dueQuery on
- * why this does not tick up on its own as cards come due.
+ * New cards that are due but held back by today's limit - "12 new cards are
+ * waiting" on the done screen. A server count, so null offline (the screen
+ * then just leaves the line out).
+ */
+export async function countNewWaiting(uid: string, now: Date): Promise<number | null> {
+  try {
+    const snap = await getCountFromServer(newDueQuery(uid, now))
+    return snap.data().count
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Live count for the nav badge, capped: due cards being learned, plus new
+ * cards up to what today's limit still allows. Three listeners combined, so
+ * it stays current as cards are graded anywhere in the app. See the queries
+ * on why it does not tick up on its own as cards come due.
  */
 export function subscribeToDueCount(
   uid: string,
   now: Date,
   cap: number,
+  newPerDay: number,
   cb: (count: number) => void,
 ) {
-  return onSnapshot(
-    dueQuery(uid, now, cap + 1),
-    (snap) => cb(snap.size),
-    () => cb(0),
-  )
+  let learned = 0
+  let newDue = 0
+  let introduced = 0
+  const emit = () =>
+    cb(Math.min(cap + 1, learned + Math.min(newDue, Math.max(0, newPerDay - introduced))))
+  const unsubs = [
+    onSnapshot(learnedDueQuery(uid, now, cap + 1), (snap) => ((learned = snap.size), emit()), () => cb(0)),
+    onSnapshot(newDueQuery(uid, now, cap + 1), (snap) => ((newDue = snap.size), emit()), () => cb(0)),
+    onSnapshot(introducedTodayQuery(uid, now), (snap) => ((introduced = snap.size), emit()), () => cb(0)),
+  ]
+  return () => unsubs.forEach((u) => u())
 }
 
 /**
@@ -226,13 +308,21 @@ export function gradeCard(
     schemaVersion: REVIEW_SCHEMA_VERSION,
   }
 
+  // The first answer ever given to a card is when it was "introduced": what
+  // the daily new-card limit counts. Set once; undoGrade clears it again.
+  const introduced = card.state === State.New ? { introducedAt: Timestamp.fromDate(now) } : {}
+
   const batch = writeBatch(db)
   // Only the scheduling fields. `updatedAt` means "the text changed" and a
   // review does not change the text - see Flashcard.updatedAt.
-  batch.update(cardRef, { ...after })
+  batch.update(cardRef, { ...after, ...introduced })
   batch.set(reviewRef, review)
 
-  return { next: { ...card, ...after }, reviewId: reviewRef.id, committed: batch.commit() }
+  return {
+    next: { ...card, ...after, ...introduced },
+    reviewId: reviewRef.id,
+    committed: batch.commit(),
+  }
 }
 
 /**
@@ -278,6 +368,9 @@ export async function undoGrade(
     lapses: before.lapses,
     state: before.state,
     last_review: before.last_review,
+    // Undoing a card's first answer makes it new again, so it stops counting
+    // toward today's new cards. Otherwise the grade never touched the field.
+    ...(before.state === State.New ? { introducedAt: deleteField() } : {}),
   })
   await deleteDoc(doc(collection(cardRef, 'reviews'), reviewId))
 }

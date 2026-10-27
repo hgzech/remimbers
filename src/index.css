@@ -1045,3 +1045,17 @@ body {
 .lib-import-q { overflow-wrap: anywhere; }
 .lib-import-a { color: var(--accent); overflow-wrap: anywhere; }
 .lib-import-preview .lib-import-more { color: var(--text-dim); border-bottom: none; }
+
+.settings-inline { align-items: center; justify-content: flex-start; }
+.settings-number {
+  width: 84px;
+  font: inherit;
+  font-size: 16px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-align: center;
+}
+.settings-number:focus { outline: none; border-color: var(--accent); }

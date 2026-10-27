@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { QUEUE_LIMIT, subscribeToDueCount } from '../lib/review'
+import { useSettings } from '../settings/SettingsProvider'
 
 export function Layout() {
   const { user, isOwner } = useAuth()
@@ -68,14 +69,15 @@ export function Layout() {
 function useDueCount(): number {
   const { user } = useAuth()
   const { pathname } = useLocation()
+  const { newCardsPerDay } = useSettings()
   const [due, setDue] = useState(0)
 
   // `pathname` is in the dependency list purely to re-issue the query with a
   // current "now" when you move between screens. It is not used in the body.
   useEffect(() => {
     if (!user) return
-    return subscribeToDueCount(user.uid, new Date(), QUEUE_LIMIT, setDue)
-  }, [user, pathname])
+    return subscribeToDueCount(user.uid, new Date(), QUEUE_LIMIT, newCardsPerDay, setDue)
+  }, [user, pathname, newCardsPerDay])
 
   return due
 }

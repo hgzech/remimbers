@@ -10,8 +10,32 @@
       "collectionGroup": "cards",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "suspended", "order": "ASCENDING" },
-        { "fieldPath": "due", "order": "ASCENDING" }
+        {
+          "fieldPath": "suspended",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "due",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cards",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "suspended",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "due",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

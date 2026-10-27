@@ -89,6 +89,33 @@ export const MAX_LANGUAGES = 4
 export interface UserSettings {
   languages: string[]
   feedbackOptIn: boolean
+  newCardsPerDay: number
+}
+
+/**
+ * How many cards you meet for the first time per day, at most.
+ *
+ * Without it every new card is due the moment it exists, so a big import or a
+ * long PDF lands in review all at once. 20 leaves room for a keen first day;
+ * a steady 5-minute habit sustains fewer, which is why it is a setting.
+ * Cards already being learned are never held back.
+ */
+export const DEFAULT_NEW_CARDS_PER_DAY = 20
+export const MAX_NEW_CARDS_PER_DAY = 200
+
+/** A whole number in range, or the default for anything unreadable. */
+export function sanitizeNewCardsPerDay(value: unknown): number {
+  const n = typeof value === 'number' ? Math.round(value) : NaN
+  if (!Number.isFinite(n)) return DEFAULT_NEW_CARDS_PER_DAY
+  return Math.min(MAX_NEW_CARDS_PER_DAY, Math.max(0, n))
+}
+
+export async function saveNewCardsPerDay(uid: string, n: number): Promise<void> {
+  await setDoc(
+    settingsDocRef(uid),
+    { newCardsPerDay: sanitizeNewCardsPerDay(n), updatedAt: serverTimestamp() },
+    { merge: true },
+  )
 }
 
 /**

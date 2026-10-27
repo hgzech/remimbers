@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthProvider'
 import { deleteCard, updateCardText } from '../lib/cards'
 import { fetchNote } from '../lib/notes'
 import {
+  countNewWaiting,
   fetchAheadCards,
   fetchDueCards,
   fetchNextDue,
@@ -19,6 +20,7 @@ import {
   scheduler,
 } from '../lib/fsrs'
 import { toFsrsCard, type Flashcard, type Note } from '../lib/types'
+import { useSettings } from '../settings/SettingsProvider'
 import { VoiceReview } from './VoiceReview'
 
 export function Review() {
@@ -52,6 +54,7 @@ export function Review() {
 function TextReview() {
   const { user } = useAuth()
   const uid = user?.uid
+  const { newCardsPerDay } = useSettings()
 
   const [queue, setQueue] = useState<Flashcard[] | null>(null)
   const [exhausted, setExhausted] = useState(false)
@@ -105,7 +108,7 @@ function TextReview() {
   useEffect(() => {
     if (!uid) return
     let cancelled = false
-    fetchDueCards(uid, new Date())
+    fetchDueCards(uid, new Date(), newCardsPerDay)
       .then((cards) => !cancelled && showFrom(cards))
       .catch((e: unknown) => {
         if (cancelled) return
@@ -115,7 +118,7 @@ function TextReview() {
     return () => {
       cancelled = true
     }
-  }, [uid, showFrom])
+  }, [uid, showFrom, newCardsPerDay])
 
   // Local queue ran dry: ask the server once more, in case the deck had more
   // than one screenful due, or a learning step has come round again.
@@ -124,7 +127,7 @@ function TextReview() {
     let cancelled = false
     void (async () => {
       try {
-        const more = await fetchDueCards(uid, new Date())
+        const more = await fetchDueCards(uid, new Date(), newCardsPerDay)
         if (cancelled) return
         if (more.length > 0) {
           showFrom(more)
@@ -139,7 +142,7 @@ function TextReview() {
     return () => {
       cancelled = true
     }
-  }, [uid, queue, exhausted, showFrom])
+  }, [uid, queue, exhausted, showFrom, newCardsPerDay])
 
   const reveal = useCallback(() => {
     if (revealedAt.current === null) revealedAt.current = Date.now()
@@ -533,6 +536,19 @@ export function DoneScreen({
 }) {
   const now = new Date()
   const [loadingAhead, setLoadingAhead] = useState(false)
+  const { user } = useAuth()
+  const uid = user?.uid
+  // New cards held back by the daily limit. Null until known, or offline.
+  const [waiting, setWaiting] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!uid) return
+    let cancelled = false
+    void countNewWaiting(uid, new Date()).then((n) => !cancelled && setWaiting(n))
+    return () => {
+      cancelled = true
+    }
+  }, [uid])
 
   return (
     <div className="centered">
@@ -549,10 +565,17 @@ export function DoneScreen({
         <p className="review-done">Nothing due.</p>
       )}
 
+      {waiting !== null && waiting > 0 && (
+        <p className="empty">
+          {waiting === 1 ? '1 new card is' : `${waiting} new cards are`} waiting for tomorrow.{' '}
+          <Link to="/settings">Daily limit</Link>
+        </p>
+      )}
+
       <p className="empty">
         {nextDue ? (
           <>Next card in {formatInterval(now, nextDue.due.toDate())}.</>
-        ) : (
+        ) : waiting ? null : (
           <>
             No cards waiting. <Link to="/">Capture something</Link> and it will be
             due straight away.

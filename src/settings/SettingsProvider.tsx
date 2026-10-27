@@ -5,9 +5,12 @@ import { useAuth } from '../auth/AuthProvider'
 import {
   DEFAULT_FEEDBACK_OPT_IN,
   DEFAULT_LANGUAGES,
+  DEFAULT_NEW_CARDS_PER_DAY,
   sanitizeLanguages,
+  sanitizeNewCardsPerDay,
   saveFeedbackOptIn,
   saveLanguages,
+  saveNewCardsPerDay,
   settingsDocRef,
 } from '../lib/settings'
 
@@ -23,8 +26,11 @@ interface SettingsState {
   languages: string[]
   /** See lib/settings.ts - gates the "what went wrong?" ask, not restart or go-back. */
   feedbackOptIn: boolean
+  /** Daily cap on cards seen for the first time. See lib/settings.ts. */
+  newCardsPerDay: number
   save: (languages: string[]) => Promise<void>
   saveFeedback: (optIn: boolean) => Promise<void>
+  saveNewCardsPerDay: (n: number) => Promise<void>
 }
 
 const Ctx = createContext<SettingsState | null>(null)
@@ -34,6 +40,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('loading')
   const [languages, setLanguages] = useState<string[]>(DEFAULT_LANGUAGES)
   const [feedbackOptIn, setFeedbackOptIn] = useState(DEFAULT_FEEDBACK_OPT_IN)
+  const [newCardsPerDay, setNewCardsPerDay] = useState(DEFAULT_NEW_CARDS_PER_DAY)
 
   useEffect(() => {
     // AuthGate only renders this tree once access is 'ok', so `user` is
@@ -52,6 +59,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         // normal case for every user who predates the setting, and the safe
         // reading of an absent consent is that it was never given.
         setFeedbackOptIn(snap.data().feedbackOptIn === true)
+        // Missing for everyone who predates the setting: the default applies.
+        setNewCardsPerDay(sanitizeNewCardsPerDay(snap.data().newCardsPerDay))
         setStatus('ready')
         return
       }
@@ -69,6 +78,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     status,
     languages,
     feedbackOptIn,
+    newCardsPerDay,
     save: async (next) => {
       if (!user) throw new Error('not signed in')
       // Optimistic: the snapshot will confirm, but with offline persistence
@@ -81,6 +91,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       if (!user) throw new Error('not signed in')
       setFeedbackOptIn(optIn)
       await saveFeedbackOptIn(user.uid, optIn)
+    },
+    saveNewCardsPerDay: async (n) => {
+      if (!user) throw new Error('not signed in')
+      setNewCardsPerDay(sanitizeNewCardsPerDay(n))
+      await saveNewCardsPerDay(user.uid, n)
     },
   }
 
