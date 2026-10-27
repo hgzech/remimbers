@@ -1,6 +1,8 @@
 # Remimbers — Design Notes
 
-*v0.7 — 20 Oct 2026. Thinking document, not a spec.*
+*v0.8 — 27 Oct 2026. Thinking document, not a spec.*
+
+*v0.8 changes: cards are fixed in place, not regenerated from notes (§3.1, §4.1a); cost cap no longer gates invitations (§9).*
 
 *v0.7 changes: §3.2 splits the single voice rollback into **restart current card** (the default, deletes nothing) and **go back to previous card** (explicit only), after the single action turned out to undo the wrong card in the common case; §4.5 follows. Text review gains an undo for the last grade.*
 
@@ -16,6 +18,7 @@
 | Audio | **Not persisted** | Firebase Storage dropped entirely; IndexedDB holds blobs transiently (§5.1) |
 | Platform | **iPhone-first PWA**, Android free | Manual home-screen install; user gesture required for mic (§5.2) |
 | Cards | **Auto-accepted**, fixable at review time | No approval inbox |
+| Card fixes | **In place; no deck regeneration** | Notes kept as grounding for fixes (§3.1) |
 | Zero-card notes | **Not supported** — every note yields ≥1 card | Simpler model |
 | Thin notes | **Never padded from model knowledge**; repaired conversationally at review | Capture stays non-blocking (§4.1a) |
 | Grading | LLM judges correct/incorrect; **user picks the difficulty** | Sidesteps LLM leniency (§4.3) |
@@ -136,7 +139,7 @@ Three reasons this subcollection matters more than it looks:
 
 *Settled 21 Aug 2026, before the review UI, because this is the one shape in the app that can't be migrated by rerunning something.*
 
-Everything else here is derived: delete every card and a regeneration pass over the notes brings them back. A review is an **event** — it happened at a moment, in a state that no longer exists — so the schema is fixed first and carries fields Phase 2 itself has no use for.
+Everything else here can be fixed in place: a bad card gets edited, a wrong schedule gets recomputed. A review is an **event** — it happened at a moment, in a state that no longer exists — so the schema is fixed first and carries fields Phase 2 itself has no use for.
 
 | group | fields | why |
 |---|---|---|
@@ -149,7 +152,7 @@ Everything else here is derived: delete every card and a regeneration pass over 
 Four of those took an argument, and the arguments are the point:
 
 - **`llmJudgedCorrect` is `null` in text mode, never `false`.** `false` is a claim — *the grader said you were wrong*. Text review runs no grader at all. Collapsing "nobody judged" into "judged incorrect" would silently poison the exact number §6.3 exists to produce, and every Phase 2 review would be in the denominator of a calibration statistic it was never part of.
-- **`before` is stored, not recomputed.** In principle the pre-review state is replayable from the card's whole history in order. In practice Phase 5 *changes the parameters*, and a replay under new weights doesn't reproduce the state the old weights actually produced. Storing ts-fsrs's `ReviewLog` verbatim, alongside the `scheduler` block that produced `after`, makes every row self-describing: you can refit without reconstructing anything, and a row survives its card being deleted or regenerated.
+- **`before` is stored, not recomputed.** In principle the pre-review state is replayable from the card's whole history in order. In practice Phase 5 *changes the parameters*, and a replay under new weights doesn't reproduce the state the old weights actually produced. Storing ts-fsrs's `ReviewLog` verbatim, alongside the `scheduler` block that produced `after`, makes every row self-describing: you can refit without reconstructing anything, and a row survives its card being deleted or edited.
 - **`reviewedAt` is a client timestamp, deliberately.** It is the exact instant handed to FSRS, so the row agrees with the arithmetic that was actually applied; a `serverTimestamp()` would also be unavailable offline, where review is expressly meant to work. `syncedAt` is the server's, and bounds it from outside — the only defence against a wrong device clock quietly corrupting the intervals the optimiser learns from.
 - **`cardEditedAt` is the card's `updatedAt` at review time.** Cards get fixed at the moment they annoy you (§4.1a), so card text churns by design. Two reviews of "Why did he forbid it?" and of the repaired question are not measurements of the same thing. Logging the content version lets that history be split into comparable halves later. It's also why answering a card leaves `updatedAt` alone — and why editing one writes a client timestamp, so the value is knowable locally the instant it changes.
 
@@ -159,7 +162,7 @@ Four of those took an argument, and the arguments are the point:
 
 **Deleting a card does not delete its reviews.** Firestore keeps subcollection documents when the parent goes, which is what we want: a card deleted for being bad is precisely the calibration data worth keeping.
 
-**Why keep the note?** Cards are derived data. Keeping `rawText` means you can regenerate the whole deck when you improve the generation prompt, and it gives the grading model context ("the source said…"). Treat notes as source and cards as build output.
+**Why keep the note?** Grading context ("the source said…") and grounding for card fixes. Cards are fixed in place, never regenerated from notes.
 
 #### 3.2 Rollback: the one exception to append-only
 
@@ -337,7 +340,7 @@ The prompt does the real work here. Non-negotiables:
 
 Some notes are too thin to card honestly — dictation cut off by a dropped mic, a term captured with no context, a sentence that trails off. There are only two ways to handle one, and they pull in opposite directions:
 
-- **Pad it from the model's own knowledge.** Produces a good-looking card containing something you never actually heard. This is the worst failure the app can have, and not because the added fact is likely to be wrong — it usually isn't. It's that a fabricated card is *indistinguishable from a real one*. You cannot tell, months later, which parts of your deck came from the world and which came from the model, and the moment that's true the deck stops being a record of what you learned. It also quietly voids §3's promise that the deck can be regenerated from notes, since the notes no longer contain what the cards test.
+- **Pad it from the model's own knowledge.** Produces a good-looking card containing something you never actually heard. This is the worst failure the app can have, and not because the added fact is likely to be wrong — it usually isn't. It's that a fabricated card is *indistinguishable from a real one*. You cannot tell, months later, which parts of your deck came from the world and which came from the model, and the moment that's true the deck stops being a record of what you learned. Automatic fixes follow the same rule: they may use the note and the user's feedback, never model knowledge.
 - **Card only what survived.** Honest, and visibly thin.
 
 **The second, always.** Observed rate: `gpt-5.6-luna` fabricated in exactly one of twenty eval cases — the single case where the note gave it nothing to work with. Everywhere else it stayed inside the note, including a case where supplying a correct missing name would have been trivial. So the failure mode is real but narrow: it appears precisely when the note is starved, which is exactly when a thin card is the right answer anyway.
@@ -726,7 +729,7 @@ Phase 1 is deliberately first. Paste in twenty notes of the kind you'd actually 
 
 Phase 2 gives you something worth opening every day, which matters: you need real cards and real review history before the Phase 4 conversation has anything interesting to work with.
 
-**As of v0.6 the table is history rather than a plan.** Phases 0–4 describe the order the app was built in. What remains (Phase 5, Phase 6, the cost cap, card repair) is picked from a backlog as it becomes interesting, not worked through in sequence. The ordering arguments below still matter, but as *dependencies*, not a schedule: fitting FSRS needs a few hundred to ~1,000 of your own reviews; the load forecast needs fitted parameters; retention tiers need nothing; the cost cap has to precede any invitation.
+**As of v0.6 the table is history rather than a plan.** Phases 0–4 describe the order the app was built in. What remains (Phase 5, Phase 6, the cost cap, card repair) is picked from a backlog as it becomes interesting, not worked through in sequence. The ordering arguments below still matter, but as *dependencies*, not a schedule: fitting FSRS needs a few hundred to ~1,000 of your own reviews; the load forecast needs fitted parameters; retention tiers need nothing.
 
 Phase 6 is last for two reasons, both in §6.5: re-tiering is retroactively free, so nothing is lost by shipping everything at 90% first, and the forecast is only honest once Phase 5 has fitted parameters and enough reviews to measure real per-tier seconds from. Building it earlier would mean guessing at both.
 
