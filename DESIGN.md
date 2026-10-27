@@ -135,6 +135,7 @@ Everything under `users/{uid}/…` so the security rules are one line.
 | `state` | 0–3 | New / Learning / Review / Relearning |
 | `stability`, `difficulty`, `elapsed_days`, `scheduled_days`, `reps`, `lapses`, `last_review` | | FSRS state, stored flat rather than nested so it round-trips cleanly |
 | `suspended` | bool | |
+| `introducedAt` | Timestamp? | first answer ever (set by `gradeCard` when the card was New, cleared by `undoGrade`); what the daily new-card limit counts |
 
 ### `users/{uid}/cards/{cardId}/reviews/{reviewId}` — the log
 
@@ -673,6 +674,10 @@ The forecast itself is cheap: run `scheduler.repeat()` forward over the existing
 The encouraging half, worth recording so the numbers above don't read as discouraging: 40 reviews/day is *robust*. A week away is a 280-card backlog — two long sessions, not a death spiral — where a 200/day habit would leave 1,400 and end the habit. And 4 cards a day is ~1,500 a year, ~4,400 after three years. Small budgets compound much better than they feel.
 
 ---
+
+### 6.7 Daily new-card limit
+
+Setting `newCardsPerDay` (`users/{uid}/settings/prefs`, default 20, 0–200). A study day starts at 4 am local time (`studyDayStart`). The queue is cards being learned (state 1–3, due) first, then new cards (state 0, due, oldest first) up to `newCardsPerDay` minus cards with `introducedAt` since the day began. Both queries use the composite index (suspended, state, due). The nav badge combines three listeners the same way; the done screen shows the held-back count (server count aggregate, omitted offline). Imports and big PDF uploads therefore arrive gradually without spreading their due dates.
 
 ## 7. Cost model
 
